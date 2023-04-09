@@ -81,16 +81,39 @@ class PANELS_OP_RemoveLayer(bpy.types.Operator):
 
 
 class PANELS_OP_AssignPreset(bpy.types.Operator):
-    """Assigns preset to the selected faces"""
+    """Assign current preset to selected faces"""
     bl_label = "Assign Preset"
     bl_idname = "panels.assign_preset"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
-        return context.active_object
+        return context.object and context.object.type == 'MESH' \
+            and context.mode == 'EDIT_MESH' and context.object.data.total_face_sel > 0
 
     def execute(self, context):
-        pass
+        target = context.object.data.attributes
+        active_preset_index = context.scene.panel_manager.active_preset
+
+        bm = bmesh.from_edit_mesh(context.object.data)
+        selected = [f.index for f in bm.faces if f.select]
+
+        # A hacky way of writing attributes and getting selected faces
+        # from OBJECT mode because in EDIT attribute data is empty
+        bpy.ops.object.mode_set(mode='OBJECT')
+        name = "panel_preset_index"
+        if target.find(name) < 0:
+            attrib = target.new(name, 'INT', 'FACE')
+        else:
+            attrib = target[target.find(name)]
+        attrib_data = attrib.data.values()
+        for index in selected:
+            attrib_data[index].value = active_preset_index
+
+        self.report({'INFO'}, f"Set preset {active_preset_index} on {len(selected)} faces")
+        bm.free()
+        bpy.ops.object.mode_set(mode='EDIT')
+        return {'FINISHED'}
 
 
 class PANELS_OP_BakePresets(bpy.types.Operator):

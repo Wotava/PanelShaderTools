@@ -33,6 +33,7 @@ classes = [
     operators.PANELS_OP_RemovePreset,
     operators.PANELS_OP_AddLayer,
     operators.PANELS_OP_RemoveLayer,
+    operators.PANELS_OP_AssignPreset,
     operators.PANELS_OP_BakePresets,
     operators.PANELS_OP_DefinePlaneNormal
 ]
