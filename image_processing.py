@@ -42,15 +42,15 @@ class PanelLayer(bpy.types.PropertyGroup):
         name="Use Previous FG Mask",
         default=False
     )
-    sector_offset: bpy.props.FloatProperty(
+    sector_offset: bpy.props.IntProperty(
         name="Sector Offset",
         default=0
     )
-    fg_sectors: bpy.props.FloatProperty(
+    fg_sectors: bpy.props.IntProperty(
         name="FG Sectors",
         default=0
     )
-    bg_sectors: bpy.props.FloatProperty(
+    bg_sectors: bpy.props.IntProperty(
         name="BG Sectors",
         default=0
     )
@@ -84,6 +84,7 @@ class PanelLayer(bpy.types.PropertyGroup):
         pixels = []
         for item in list(self.__annotations__):
             attr = getattr(self, item)
+            print(attr)
             if type(attr) is Vector:
                 pixels.extend(attr)
             else:
@@ -186,7 +187,10 @@ class LayerManager(bpy.types.PropertyGroup):
             for layer in preset.layers:
                 pixels = layer.get_values()
                 print(f"writing {pixels}")
-                image.pixels[pos:pos + len(pixels)] = pixels
+                start = pos
+                end = pos + len(pixels)
+                print(start, end)
+                image.pixels[start : end] = pixels
                 pos += len(pixels)
 
     def read_image(self):
