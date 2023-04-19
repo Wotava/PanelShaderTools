@@ -14,26 +14,38 @@ class PanelLayer(bpy.types.PropertyGroup):
     )
     plane_offset: bpy.props.FloatProperty(
         name="Plane Offset",
+        min=0.0,
+        max=1.0,
         default=0
     )
     plane_dist_A: bpy.props.FloatProperty(
         name="Plane Distance A",
+        min=0.0,
+        max=500.0,
         default=0
     )
     plane_dist_B: bpy.props.FloatProperty(
         name="Plane Distance B",
+        min=0.0,
+        max=500.0,
         default=0
     )
     decal_length: bpy.props.FloatProperty(
         name="Decal Length",
+        min=0.0,
+        max=128.0,
         default=0
     )
     decal_thickness: bpy.props.FloatProperty(
         name="Decal Thickness",
+        min=0.0,
+        max=16.0,
         default=0
     )
     leak_length: bpy.props.FloatProperty(
         name="Leak Length",
+        min=0.0,
+        max=16.0,
         default=0
     )
 
@@ -44,14 +56,20 @@ class PanelLayer(bpy.types.PropertyGroup):
     )
     sector_offset: bpy.props.IntProperty(
         name="Sector Offset",
+        min=0,
+        max=64,
         default=0
     )
     fg_sectors: bpy.props.IntProperty(
         name="FG Sectors",
+        min=0,
+        max=64,
         default=0
     )
     bg_sectors: bpy.props.IntProperty(
         name="BG Sectors",
+        min=0,
+        max=64,
         default=0
     )
 
