@@ -32,16 +32,34 @@ def unpack_struct(target: float) -> [int]:
     return unpack(fmt, bytepres)
 
 
-def pack_manual(target: [float]):
-    packed = target[0] << 24 | target[1] << 16 | target[2] << 8 | target[3]
+def pack_manual(target: [int], bits_per_val: [int]) -> int:
+    """Pack multiple int values with varying length into one int32 value with bitwise operations"""
+    if type(bits_per_val) is int:
+        bits_per_val = [bits_per_val]
+    if len(bits_per_val) == 1:
+        bits_per_val = bits_per_val * len(target)
+    if len(bits_per_val) != 1 and len(bits_per_val) != len(target):
+        raise ValueError("[Byte encode]Amount of bit-lengths provided doesn't match amount of target values")
+    if sum(bits_per_val) > 32:
+        raise OverflowError("[Byte encode]Sum of provided bit-lengths exceeds 32")
+
+    packed = 0
+    for val_i, val in enumerate(target):
+        # Check if values fit inside provided byte lengths
+        if val > 2**(bits_per_val[val_i]) - 1:
+            print(f"[Byte encode]Warning: value {val} exceeds maximum value of {2 ** (bits_per_val[val_i]) - 1} "
+                  f"at {bits_per_val[val_i]} bits length, output will be broken")
+        packed = packed << bits_per_val[val_i] | val
     return packed
 
 
-def unpack_manual(target: int) -> [int]:
-    d = target & 255
-    abc = target >> 8
-    c = abc & 255
-    ab = abc >> 8
-    b = ab & 255
-    a = ab >> 8
-    return a, b, c, d
+def unpack_manual(target: int, bits_per_val: [int]) -> [int]:
+    """Unpack multiple int values with varying lengths from one int32 value with bitwise operations"""
+    result = []
+    # Values are being unpacked in reverse order, so we reverse both the result AND the bite lengths list
+    bits_per_val.reverse()
+    for bit_length in bits_per_val:
+        result.append(target & (2**bit_length - 1))
+        target = target >> bit_length
+    result.reverse()
+    return result
