@@ -1,6 +1,16 @@
 import bpy
 from mathutils import Vector
+from math import pi
+from . bit_encoding import pack_manual, map_float_to_int_range, as_float, rotator_unpack_test
+from . utils import get_rotator, restore_from_rotator
+from struct import pack, unpack
 MAX_LAYERS = 8
+verbose = 2
+
+def auto_update(self, context) -> None:
+    if context.scene.panel_manager.use_auto_update:
+        manager: LayerManager = context.scene.panel_manager
+        manager.write_preset(manager.active_preset)
 
 
 class PanelLayer(bpy.types.PropertyGroup):
@@ -10,66 +20,77 @@ class PanelLayer(bpy.types.PropertyGroup):
         subtype='XYZ',
         min=-1.0,
         max=1.0,
+        update=auto_update,
         default=[0.0, 0.0, 0.0]
     )
     plane_offset: bpy.props.FloatProperty(
         name="Plane Offset",
         min=0.0,
         max=1.0,
+        update=auto_update,
         default=0
     )
     plane_dist_A: bpy.props.FloatProperty(
         name="Plane Distance A",
         min=0.0,
         max=500.0,
+        update=auto_update,
         default=0
     )
     plane_dist_B: bpy.props.FloatProperty(
         name="Plane Distance B",
         min=0.0,
         max=500.0,
+        update=auto_update,
         default=0
     )
     decal_length: bpy.props.FloatProperty(
         name="Decal Length",
         min=0.0,
         max=128.0,
+        update=auto_update,
         default=0
     )
     decal_thickness: bpy.props.FloatProperty(
         name="Decal Thickness",
         min=0.0,
         max=16.0,
+        update=auto_update,
         default=0
     )
     leak_length: bpy.props.FloatProperty(
         name="Leak Length",
         min=0.0,
         max=16.0,
+        update=auto_update,
         default=0
     )
 
     # Skip on first layer
     use_FG_mask: bpy.props.BoolProperty(
         name="Use Previous FG Mask",
+        update=auto_update,
         default=False
     )
     sector_offset: bpy.props.IntProperty(
         name="Sector Offset",
         min=0,
-        max=64,
+        max=63,
+        update=auto_update,
         default=0
     )
     fg_sectors: bpy.props.IntProperty(
         name="FG Sectors",
         min=0,
-        max=64,
+        max=63,
+        update=auto_update,
         default=0
     )
     bg_sectors: bpy.props.IntProperty(
         name="BG Sectors",
         min=0,
-        max=64,
+        max=63,
+        update=auto_update,
         default=0
     )
 
@@ -96,6 +117,44 @@ class PanelLayer(bpy.types.PropertyGroup):
             else:
                 setattr(self, item, values[i])
                 i += 1
+
+    def get_pixel(self) -> [float]:
+        """Returns RGBA pixel with encoded values"""
+        # Prepare normal vector as a Yaw-Pitch rotator
+        # Encoded as follows:
+        # 1 bit Yaw-sign, 15 bit Yaw rotation in radians in range [-Pi/2, Pi/2]
+        # 1 bit Pitch-sign, 15 bit Pitch rotation in radians in range [-Pi/2, Pi/2]
+        yaw, pitch = get_rotator(self.plane_normal.normalized())
+        r_channel = [yaw < 0, map_float_to_int_range(abs(yaw), 0, pi/2, 15),
+                     pitch < 0, map_float_to_int_range(abs(pitch), 0, pi/2, 15)]
+        r_channel = as_float(pack_manual(r_channel, [1, 15, 1, 15]))
+
+        if verbose > 2:
+            print(f"normalized vector: {self.plane_normal.normalized()}")
+            print(f"unpack test: {rotator_unpack_test(r_channel)}")
+
+        g_channel = [map_float_to_int_range(self.plane_dist_A, 0, 500, 16),
+                     map_float_to_int_range(self.plane_dist_B, 0, 500, 16)]
+        if verbose > 1:
+            print(f"Green channel: {g_channel} -> {as_float(pack_manual(g_channel, 16))}")
+            test_pack = pack('>f', as_float(pack_manual(g_channel, 16)))
+            print(f"float {test_pack} -> int {unpack('>I', test_pack)})")
+        g_channel = as_float(pack_manual(g_channel, 16))
+
+        b_channel = [map_float_to_int_range(self.decal_length, 0, 128, 16),
+                     map_float_to_int_range(self.decal_thickness, 0, 16, 8),
+                     map_float_to_int_range(self.leak_length, 0, 16, 8)]
+        if verbose > 1:
+            print(f"Blue channel: {b_channel} -> {as_float(pack_manual(b_channel,  [16, 8, 8]))}")
+        b_channel = as_float(pack_manual(b_channel, [16, 8, 8]))
+
+        # All these values are already ints in int6 range [0;63] except for plane_offset
+        plane_offset = map_float_to_int_range(self.plane_offset, 0, 1, 8)
+        a_channel = [plane_offset, self.fg_sectors, self.bg_sectors, self.sector_offset, int(self.use_FG_mask)]
+        a_channel = as_float(pack_manual(a_channel, [8, 6, 6, 6, 1]))
+        if verbose > 0:
+            print(f"writing {r_channel}, {g_channel}, {b_channel}, {a_channel}")
+        return [r_channel, g_channel, b_channel, a_channel]
 
     def get_values(self):
         # TODO fix this mess too
@@ -144,13 +203,13 @@ class LayerPreset(bpy.types.PropertyGroup):
         else:
             self.layers.remove(self.active_layer)
 
-    def get_combined_values(self) -> [float]:
+    def get_pixel_strip(self) -> [float]:
         # TODO adjust
         pixels = []
         skips = 0
         for layer in self.layers:
             if layer.use_layer:
-                pixels.extend(layer.get_values())
+                pixels.extend(layer.get_pixel())
             else:
                 skips += 1
         pixels.extend([0] * skips)
@@ -179,6 +238,11 @@ class LayerManager(bpy.types.PropertyGroup):
         name="Max Amount of Layers per Preset",
         default=8
     )
+    use_auto_update: bpy.props.BoolProperty(
+        name="Enable Auto-Update",
+        description="Enables auto update of target image when any layer parameter is changed",
+        default=False
+    )
 
     def new_preset(self):
         """Create new preset with given name"""
@@ -195,21 +259,25 @@ class LayerManager(bpy.types.PropertyGroup):
         """Duplicate preset at the given index"""
         pass
 
-    def write_image(self, image: bpy.types.Image = None):
+    def write_preset(self, preset_id: int, image: bpy.types.Image = None) -> None:
+        """Used update some preset on-the-go when values are changed"""
+        if not image:
+            image = self.target_image
+
+        preset: LayerPreset = self.scene_presets[preset_id]
+        pixels = preset.get_pixel_strip()
+        start_pos = preset_id
+        end_pos = preset_id + len(pixels)
+        image.pixels[start_pos: end_pos] = pixels
+        image.update()
+
+    def write_image(self, image: bpy.types.Image = None) -> None:
         """Write pixels to specified image"""
         if not image:
             image = self.target_image
 
-        pos = 0
-        for preset in self.scene_presets:
-            for layer in preset.layers:
-                pixels = layer.get_values()
-                print(f"writing {pixels}")
-                start = pos
-                end = pos + len(pixels)
-                print(start, end)
-                image.pixels[start : end] = pixels
-                pos += len(pixels)
+        for i in range(0, len(self.scene_presets)):
+            self.write_preset(i, image)
 
     def read_image(self):
         """Reads presets from specified image and appends them to Scene"""

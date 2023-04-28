@@ -3,12 +3,16 @@ if "bpy" in locals():
     importlib.reload(image_processing)
     importlib.reload(ui)
     importlib.reload(operators)
+    importlib.reload(bit_encoding)
+    importlib.reload(utils  )
     print("[SHTOOLS] Addon reload")
 else:
     import bpy
     from . import image_processing
     from . import ui
     from . import operators
+    from . import bit_encoding
+    from . import utils
 
 
 bl_info = {
@@ -40,6 +44,8 @@ classes = [
 
 
 def register():
+    print(bit_encoding.verbose)
+    print(utils.verbose)
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.panel_manager = bpy.props.PointerProperty(type=image_processing.LayerManager)
