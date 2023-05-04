@@ -1,6 +1,6 @@
 from math import asin, atan2, cos, sin, pi
 from mathutils import Vector
-verbose = 1
+verbose = 0
 
 
 def get_rotator(vec: Vector) -> [float]:

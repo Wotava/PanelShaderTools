@@ -1,11 +1,11 @@
 import bpy
 from mathutils import Vector
 from math import pi
-from . bit_encoding import pack_manual, map_float_to_int_range, as_float, rotator_unpack_test
-from . utils import get_rotator, restore_from_rotator
-from struct import pack, unpack
+from . bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, rotator_unpack_test
+from . utils import get_rotator
 MAX_LAYERS = 8
-verbose = 2
+verbose = 0
+
 
 def auto_update(self, context) -> None:
     if context.scene.panel_manager.use_auto_update:
@@ -120,39 +120,46 @@ class PanelLayer(bpy.types.PropertyGroup):
 
     def get_pixel(self) -> [float]:
         """Returns RGBA pixel with encoded values"""
-        # Prepare normal vector as a Yaw-Pitch rotator
+        # Prepare normal vector as a Yaw-Pitch rotator with signed ints
         # Encoded as follows:
         # 1 bit Yaw-sign, 15 bit Yaw rotation in radians in range [-Pi/2, Pi/2]
         # 1 bit Pitch-sign, 15 bit Pitch rotation in radians in range [-Pi/2, Pi/2]
         yaw, pitch = get_rotator(self.plane_normal.normalized())
         r_channel = [yaw < 0, map_float_to_int_range(abs(yaw), 0, pi/2, 15),
                      pitch < 0, map_float_to_int_range(abs(pitch), 0, pi/2, 15)]
-        r_channel = as_float(pack_manual(r_channel, [1, 15, 1, 15]))
-
+        r_packed = pack_manual(r_channel, [1, 15, 1, 15])
+        print(yaw, pitch)
+        print(rotator_unpack_test(as_float(r_packed)))
         if verbose > 2:
-            print(f"normalized vector: {self.plane_normal.normalized()}")
-            print(f"unpack test: {rotator_unpack_test(r_channel)}")
+            print(f"rch bits {bin(r_packed)} ({len(bin(r_packed)) - 2} bit)")
+        r_channel, r_flip = as_float_denormalized(r_packed)
 
         g_channel = [map_float_to_int_range(self.plane_dist_A, 0, 500, 16),
                      map_float_to_int_range(self.plane_dist_B, 0, 500, 16)]
-        if verbose > 1:
-            print(f"Green channel: {g_channel} -> {as_float(pack_manual(g_channel, 16))}")
-            test_pack = pack('>f', as_float(pack_manual(g_channel, 16)))
-            print(f"float {test_pack} -> int {unpack('>I', test_pack)})")
-        g_channel = as_float(pack_manual(g_channel, 16))
+        g_packed = pack_manual(g_channel, 16)
+        if verbose > 2:
+            print(f"gch bits {bin(g_packed)} ({len(bin(g_packed)) - 2} bit)")
+        g_channel, g_flip = as_float_denormalized(g_packed)
 
         b_channel = [map_float_to_int_range(self.decal_length, 0, 128, 16),
                      map_float_to_int_range(self.decal_thickness, 0, 16, 8),
                      map_float_to_int_range(self.leak_length, 0, 16, 8)]
-        if verbose > 1:
-            print(f"Blue channel: {b_channel} -> {as_float(pack_manual(b_channel,  [16, 8, 8]))}")
-        b_channel = as_float(pack_manual(b_channel, [16, 8, 8]))
+        b_packed = pack_manual(b_channel, [16, 8, 8])
+        if verbose > 2:
+            print(f"bch bits {bin(b_packed)} ({len(bin(b_packed)) - 2} bit)")
+        b_channel, b_flip = as_float_denormalized(b_packed)
 
         # All these values are already ints in int6 range [0;63] except for plane_offset
+        # No need to check this manually since we can simply write 0 to 30th bit straight away
         plane_offset = map_float_to_int_range(self.plane_offset, 0, 1, 8)
-        a_channel = [plane_offset, self.fg_sectors, self.bg_sectors, self.sector_offset, int(self.use_FG_mask)]
-        a_channel = as_float(pack_manual(a_channel, [8, 6, 6, 6, 1]))
-        if verbose > 0:
+        a_channel = [int(r_flip), int(g_flip), int(b_flip), plane_offset,
+                     self.fg_sectors, self.bg_sectors, self.sector_offset, int(self.use_FG_mask)]
+        a_packed = pack_manual(a_channel, [1, 1, 1, 8, 6, 6, 6, 1])
+        if verbose > 2:
+            print(f"ach bits {bin(a_packed)} ({len(bin(a_packed)) - 2} bit)")
+        a_channel = as_float(a_packed)
+        if verbose > 1:
+            print(f"flips {r_flip} {g_flip} {b_flip}")
             print(f"writing {r_channel}, {g_channel}, {b_channel}, {a_channel}")
         return [r_channel, g_channel, b_channel, a_channel]
 

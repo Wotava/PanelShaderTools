@@ -17,18 +17,43 @@ def map_int_to_float_range(value: float, range_min: int, range_max: int, bit_dep
     return float(range_min + val_range * multiplier)
 
 
-def as_float(target: int) -> float:
-    fmt = '=I'
-    bytepres = pack(fmt, target)
-    fmt = '=f'
-    return unpack(fmt, bytepres)[0]
+def as_float(target: int, endian='big') -> float:
+    if endian == 'big':
+        fmt_i = '>I'
+        fmt_f = '>f'
+    else:
+        fmt_i = '<I'
+        fmt_f = '<f'
+    bytepres = pack(fmt_i, target)
+    return unpack(fmt_f, bytepres)[0]
 
 
-def as_uint(target: float) -> int:
-    fmt = '=f'
-    bytepres = pack(fmt, target)
-    fmt = '=I'
-    return unpack(fmt, bytepres)[0]
+def as_float_denormalized(target: float) -> [float, bool]:
+    """A somewhat lazy way to surpass Blender's ImageTexture node output clamp of extremely large float values by
+    de-normalizing said float, so the output will be in range [-2, 2], which is inside Blender's clamp range.
+    Outputs de-normalized (30th bit set to 0) float value and a bool flag that is set to true when original value
+    had 30th bit set to 1"""
+    if type(target) is float:
+        target = as_uint(target)
+    t_bin = bin(target)
+    if len(t_bin) == 34 and t_bin[3] == '1':
+        target ^= (1 << 30)
+        return [as_float(target, 'big'), True]
+    elif len(t_bin) == 33 and t_bin[2] == '1':
+        return [as_float(target, 'big'), True]
+    else:
+        return [as_float(target, 'big'), False]
+
+
+def as_uint(target: float, endian='big') -> int:
+    if endian == 'big':
+        fmt_i = '>I'
+        fmt_f = '>f'
+    else:
+        fmt_i = '<I'
+        fmt_f = '<f'
+    bytepres = pack(fmt_f, target)
+    return unpack(fmt_i, bytepres)[0]
 
 
 def pack_manual(target: [int], bits_per_val: [int]) -> int:
@@ -48,7 +73,7 @@ def pack_manual(target: [int], bits_per_val: [int]) -> int:
         if val > 2**(bits_per_val[val_i]) - 1:
             print(f"[Byte encode]Warning: value {val} exceeds maximum value of {2 ** (bits_per_val[val_i]) - 1} "
                   f"at {bits_per_val[val_i]} bits length, output will be broken")
-        if verbose > 0:
+        if verbose > 1:
             print(f"{val_i}: {packed} = {packed} << {bits_per_val[val_i]} | {val} ")
         packed = packed << bits_per_val[val_i] | val
     return packed
@@ -61,7 +86,7 @@ def unpack_manual(target: int, bits_per_val: [int]) -> [int]:
     bits_per_val = bits_per_val.copy()
     bits_per_val.reverse()
     for bit_length in bits_per_val:
-        if verbose > 0:
+        if verbose > 1:
             print(f"value {len(result)}: {target} & {2**bit_length - 1}")
             print(f"target = {target} >> {bit_length}")
         result.append(target & (2**bit_length - 1))
