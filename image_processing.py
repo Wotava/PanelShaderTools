@@ -1,10 +1,11 @@
 import bpy
 from mathutils import Vector
 from math import pi
-from . bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, rotator_unpack_test
-from . utils import get_rotator
+from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, unpack_manual
+from .utils import get_rotator
+
 MAX_LAYERS = 8
-verbose = 0
+verbose = 3
 
 
 def auto_update(self, context) -> None:
@@ -33,35 +34,28 @@ class PanelLayer(bpy.types.PropertyGroup):
     plane_dist_A: bpy.props.FloatProperty(
         name="Plane Distance A",
         min=0.0,
-        max=500.0,
+        max=50.0,
         update=auto_update,
         default=0
     )
     plane_dist_B: bpy.props.FloatProperty(
         name="Plane Distance B",
         min=0.0,
-        max=500.0,
+        max=50.0,
         update=auto_update,
         default=0
     )
     decal_length: bpy.props.FloatProperty(
         name="Decal Length",
         min=0.0,
-        max=128.0,
+        max=32.0,
         update=auto_update,
         default=0
     )
     decal_thickness: bpy.props.FloatProperty(
         name="Decal Thickness",
         min=0.0,
-        max=16.0,
-        update=auto_update,
-        default=0
-    )
-    leak_length: bpy.props.FloatProperty(
-        name="Leak Length",
-        min=0.0,
-        max=16.0,
+        max=4.0,
         update=auto_update,
         default=0
     )
@@ -75,21 +69,21 @@ class PanelLayer(bpy.types.PropertyGroup):
     sector_offset: bpy.props.IntProperty(
         name="Sector Offset",
         min=0,
-        max=63,
+        max=31,
         update=auto_update,
         default=0
     )
     fg_sectors: bpy.props.IntProperty(
         name="FG Sectors",
         min=0,
-        max=63,
+        max=15,
         update=auto_update,
         default=0
     )
     bg_sectors: bpy.props.IntProperty(
         name="BG Sectors",
         min=0,
-        max=63,
+        max=15,
         update=auto_update,
         default=0
     )
@@ -112,7 +106,7 @@ class PanelLayer(bpy.types.PropertyGroup):
         i = 0
         for item in targets:
             if item == 'plane_normal':
-                self.plane_normal = values[i:i+3]
+                self.plane_normal = values[i:i + 3]
                 i += 3
             else:
                 setattr(self, item, values[i])
@@ -125,41 +119,61 @@ class PanelLayer(bpy.types.PropertyGroup):
         # 1 bit Yaw-sign, 15 bit Yaw rotation in radians in range [-Pi/2, Pi/2]
         # 1 bit Pitch-sign, 15 bit Pitch rotation in radians in range [-Pi/2, Pi/2]
         yaw, pitch = get_rotator(self.plane_normal.normalized())
-        r_channel = [yaw < 0, map_float_to_int_range(abs(yaw), 0, pi/2, 15),
-                     pitch < 0, map_float_to_int_range(abs(pitch), 0, pi/2, 15)]
+        r_channel = [yaw < 0, map_float_to_int_range(abs(yaw), 0, pi / 2, 15),
+                     pitch < 0, map_float_to_int_range(abs(pitch), 0, pi / 2, 15)]
         r_packed = pack_manual(r_channel, [1, 15, 1, 15])
-        print(yaw, pitch)
-        print(rotator_unpack_test(as_float(r_packed)))
+        r_channel, r_flip = as_float_denormalized(r_packed)
         if verbose > 2:
             print(f"rch bits {bin(r_packed)} ({len(bin(r_packed)) - 2} bit)")
-        r_channel, r_flip = as_float_denormalized(r_packed)
 
-        g_channel = [map_float_to_int_range(self.plane_dist_A, 0, 500, 16),
-                     map_float_to_int_range(self.plane_dist_B, 0, 500, 16)]
-        g_packed = pack_manual(g_channel, 16)
+        distance_sum = self.plane_dist_A + self.plane_dist_B
+        if distance_sum != 0:
+            distance_remap = self.plane_dist_B / distance_sum
+        else:
+            distance_remap = 0
+        g_channel = [map_float_to_int_range(distance_sum, 0, 100, 16),
+                     map_float_to_int_range(distance_remap, 0, 1, 10),
+                     map_float_to_int_range(self.decal_length, 0, 32, 6)]
+
+        g_packed = pack_manual(g_channel, [16, 10, 6])
         if verbose > 2:
             print(f"gch bits {bin(g_packed)} ({len(bin(g_packed)) - 2} bit)")
         g_channel, g_flip = as_float_denormalized(g_packed)
 
-        b_channel = [map_float_to_int_range(self.decal_length, 0, 128, 16),
-                     map_float_to_int_range(self.decal_thickness, 0, 16, 8),
-                     map_float_to_int_range(self.leak_length, 0, 16, 8)]
-        b_packed = pack_manual(b_channel, [16, 8, 8])
+        b_channel = [int(g_flip), int(r_flip),
+                     map_float_to_int_range(self.plane_offset, 0, 1, 10),
+                     map_float_to_int_range(self.decal_thickness, 0, 4, 6),
+                     self.fg_sectors, self.bg_sectors, self.sector_offset, 0]
+
+        # Test if this value has non-zero (000000) exponent before packing
+        # and write a flip-bit, otherwise blender will simply round it all
+        # down to zero when reading texture
+        b_packed = pack_manual(b_channel, [1, 1, 10, 6, 4, 4, 5, 1])
+        if 25 >= len(bin(b_packed)) > 3 or len(bin(b_packed)) == 34 and bin(b_packed)[3:11] == '00000000':
+            b_flip = True
+            b_packed ^= 1
+            b_channel = as_float_denormalized(b_packed)[0]
+        else:
+            b_flip = False
+            b_channel = as_float(b_packed)
+
         if verbose > 2:
             print(f"bch bits {bin(b_packed)} ({len(bin(b_packed)) - 2} bit)")
-        b_channel, b_flip = as_float_denormalized(b_packed)
 
-        # All these values are already ints in int6 range [0;63] except for plane_offset
-        # No need to check this manually since we can simply write 0 to 30th bit straight away
-        plane_offset = map_float_to_int_range(self.plane_offset, 0, 1, 8)
-        a_channel = [int(r_flip), int(g_flip), int(b_flip), plane_offset,
-                     self.fg_sectors, self.bg_sectors, self.sector_offset, int(self.use_FG_mask)]
-        a_packed = pack_manual(a_channel, [1, 1, 1, 8, 6, 6, 6, 1])
+        a_channel = [int(self.use_FG_mask), 0]
+        a_packed = pack_manual(a_channel, [1, 1])
+
+        if 25 >= len(bin(a_packed)) > 3 or bin(a_packed) == 34 and bin(a_packed)[3:11] == '00000000':
+            a_packed ^= 1
+            a_channel = as_float_denormalized(a_packed)[0]
+        else:
+            a_channel = as_float(a_packed)
+
         if verbose > 2:
             print(f"ach bits {bin(a_packed)} ({len(bin(a_packed)) - 2} bit)")
-        a_channel = as_float(a_packed)
+
         if verbose > 1:
-            print(f"flips {r_flip} {g_flip} {b_flip}")
+            print(f"flips r{r_flip} g{g_flip} b{b_flip}")
             print(f"writing {r_channel}, {g_channel}, {b_channel}, {a_channel}")
         return [r_channel, g_channel, b_channel, a_channel]
 

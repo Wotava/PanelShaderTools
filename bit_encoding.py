@@ -42,6 +42,12 @@ def as_float_denormalized(target: float) -> [float, bool]:
     elif len(t_bin) == 33 and t_bin[2] == '1':
         target ^= (1 << 30)
         return [as_float(target, 'big'), True]
+    elif 25 >= len(t_bin) > 3:
+        target ^= (1 << 30)
+        return [as_float(target, 'big'), True]
+    elif len(t_bin) == 34 and t_bin[3:11] == '00000000':
+        target ^= (1 << 30)
+        return [as_float(target, 'big'), True]
     else:
         return [as_float(target, 'big'), False]
 

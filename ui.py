@@ -119,7 +119,6 @@ class DATA_PT_PanelShader(bpy.types.Panel):
                 row.label(text="Decals")
                 row.prop(current_layer, "decal_length", text="Length")
                 row.prop(current_layer, "decal_thickness", text="Thickness")
-                row.prop(current_layer, "leak_length", text="LLength")
 
                 row = box.row(align=True)
                 row.label(text="Sectors")
