@@ -28,6 +28,21 @@ def as_float(target: int, endian='big') -> float:
     return unpack(fmt_f, bytepres)[0]
 
 
+def check_mask(target: int) -> bool:
+    """
+    Returns True if this int value will not work with Blender due to value clamping or rounding.
+    Exponent bits should never start with 1 like 1xxxxxxx, exception is 10000000 (because 00000000 won't work too).
+    """
+    if target == 0:
+        return False
+    t_bin = bin(target)
+    t_bin = ('0' * (34 - len(t_bin))) + t_bin[2:]
+    if t_bin[1:9] == '00000000' or (t_bin[1:9] != '10000000' and t_bin[1] == '1'):
+        return True
+    else:
+        return False
+
+
 def as_float_denormalized(target: float) -> [float, bool]:
     """A somewhat lazy way to surpass Blender's ImageTexture node output clamp of extremely large float values by
     de-normalizing said float, so the output will be in range [-2, 2], which is inside Blender's clamp range.
@@ -35,17 +50,8 @@ def as_float_denormalized(target: float) -> [float, bool]:
     had 30th bit set to 1"""
     if type(target) is float:
         target = as_uint(target)
-    t_bin = bin(target)
-    if len(t_bin) == 34 and t_bin[3] == '1':
-        target ^= (1 << 30)
-        return [as_float(target, 'big'), True]
-    elif len(t_bin) == 33 and t_bin[2] == '1':
-        target ^= (1 << 30)
-        return [as_float(target, 'big'), True]
-    elif 25 >= len(t_bin) > 3:
-        target ^= (1 << 30)
-        return [as_float(target, 'big'), True]
-    elif len(t_bin) == 34 and t_bin[3:11] == '00000000':
+
+    if check_mask(target):
         target ^= (1 << 30)
         return [as_float(target, 'big'), True]
     else:

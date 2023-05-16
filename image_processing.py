@@ -1,7 +1,7 @@
 import bpy
 from mathutils import Vector
 from math import pi
-from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, unpack_manual
+from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, check_mask, rotator_unpack_test
 from .utils import get_rotator
 
 MAX_LAYERS = 8
@@ -18,7 +18,7 @@ class PanelLayer(bpy.types.PropertyGroup):
     # Mandatory
     plane_normal: bpy.props.FloatVectorProperty(
         name="Plane Normal",
-        subtype='XYZ',
+        subtype='DIRECTION',
         min=-1.0,
         max=1.0,
         update=auto_update,
@@ -92,6 +92,7 @@ class PanelLayer(bpy.types.PropertyGroup):
     use_layer: bpy.props.BoolProperty(
         name="Use This Layer",
         description="If false, this layer will be skipped when writing to image",
+        update=auto_update,
         default=True
     )
 
@@ -149,7 +150,7 @@ class PanelLayer(bpy.types.PropertyGroup):
         # and write a flip-bit, otherwise blender will simply round it all
         # down to zero when reading texture
         b_packed = pack_manual(b_channel, [1, 1, 10, 6, 4, 4, 5, 1])
-        if 25 >= len(bin(b_packed)) > 3 or len(bin(b_packed)) == 34 and bin(b_packed)[3:11] == '00000000':
+        if check_mask(b_packed):
             b_flip = True
             b_packed ^= 1
             b_channel = as_float_denormalized(b_packed)[0]
@@ -163,7 +164,7 @@ class PanelLayer(bpy.types.PropertyGroup):
         a_channel = [int(self.use_FG_mask), 0]
         a_packed = pack_manual(a_channel, [1, 1])
 
-        if 25 >= len(bin(a_packed)) > 3 or bin(a_packed) == 34 and bin(a_packed)[3:11] == '00000000':
+        if check_mask(a_packed):
             a_packed ^= 1
             a_channel = as_float_denormalized(a_packed)[0]
         else:
@@ -189,6 +190,10 @@ class PanelLayer(bpy.types.PropertyGroup):
                 pixels.append(float(attr))
         return pixels
 
+    def print_values(self):
+        for item in list(self.__annotations__):
+            attr = getattr(self, item)
+            print(item, attr)
 
 class LayerPreset(bpy.types.PropertyGroup):
     # This class handles writing layers to images and swapping their order
@@ -227,12 +232,12 @@ class LayerPreset(bpy.types.PropertyGroup):
     def get_pixel_strip(self) -> [float]:
         # TODO adjust
         pixels = []
-        skips = 0
+        skips = 8
         for layer in self.layers:
             if layer.use_layer:
                 pixels.extend(layer.get_pixel())
             else:
-                skips += 1
+                skips -= 1
         pixels.extend([0] * skips)
         return pixels
 
