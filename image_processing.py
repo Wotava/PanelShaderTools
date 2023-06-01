@@ -22,7 +22,7 @@ class PanelLayer(bpy.types.PropertyGroup):
         min=-1.0,
         max=1.0,
         update=auto_update,
-        default=[0.0, 0.0, 0.0]
+        default=[0.0, 0.0, 1.0]
     )
     plane_offset: bpy.props.FloatProperty(
         name="Plane Offset",
@@ -36,28 +36,28 @@ class PanelLayer(bpy.types.PropertyGroup):
         min=0.0,
         max=50.0,
         update=auto_update,
-        default=0
+        default=1
     )
     plane_dist_B: bpy.props.FloatProperty(
         name="Plane Distance B",
         min=0.0,
         max=50.0,
         update=auto_update,
-        default=0
+        default=1
     )
     decal_length: bpy.props.FloatProperty(
         name="Decal Length",
         min=0.0,
         max=32.0,
         update=auto_update,
-        default=0
+        default=1
     )
     decal_thickness: bpy.props.FloatProperty(
         name="Decal Thickness",
         min=0.0,
         max=4.0,
         update=auto_update,
-        default=0
+        default=0.1
     )
 
     # Skip on first layer
@@ -232,7 +232,7 @@ class LayerPreset(bpy.types.PropertyGroup):
     def get_pixel_strip(self) -> [float]:
         # TODO adjust
         pixels = []
-        skips = 8
+        skips = 32
         for layer in self.layers:
             if layer.use_layer:
                 pixels.extend(layer.get_pixel())

@@ -108,6 +108,10 @@ class DATA_PT_PanelShader(bpy.types.Panel):
                 row = box.row(align=True)
                 row.prop(current_layer, "plane_normal")
                 row.operator("panels.define_plane_normal", icon='ORIENTATION_NORMAL', text="Set", emboss=True)
+                row = box.row(align=True).row(align=True)
+                row.label(text=f"{current_layer.plane_normal.x:.2f} "
+                               f"{current_layer.plane_normal.y:.2f} "
+                               f"{current_layer.plane_normal.z:.2f}")
 
                 row = box.row(align=True)
                 row.label(text="Plane Data")
