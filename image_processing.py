@@ -5,7 +5,7 @@ from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_floa
 from .utils import get_rotator
 
 MAX_LAYERS = 8
-verbose = 3
+verbose = 0
 
 
 def auto_update(self, context) -> None:
@@ -18,7 +18,7 @@ class PanelLayer(bpy.types.PropertyGroup):
     # Mandatory
     plane_normal: bpy.props.FloatVectorProperty(
         name="Plane Normal",
-        subtype='DIRECTION',
+        subtype='XYZ',
         min=-1.0,
         max=1.0,
         update=auto_update,
@@ -57,7 +57,7 @@ class PanelLayer(bpy.types.PropertyGroup):
         min=0.0,
         max=4.0,
         update=auto_update,
-        default=0.1
+        default=0.5
     )
 
     # Skip on first layer
@@ -194,6 +194,7 @@ class PanelLayer(bpy.types.PropertyGroup):
         for item in list(self.__annotations__):
             attr = getattr(self, item)
             print(item, attr)
+
 
 class LayerPreset(bpy.types.PropertyGroup):
     # This class handles writing layers to images and swapping their order

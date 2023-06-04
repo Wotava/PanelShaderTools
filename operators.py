@@ -1,3 +1,5 @@
+import math
+
 import bpy
 import bmesh
 from mathutils import Vector
