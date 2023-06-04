@@ -14,9 +14,6 @@ def get_rotator(vec: Vector) -> [float]:
     if vec.z < 0:
         vec = vec.copy()
         vec.negate()
-        pitch_multiplier = 1
-    else:
-        pitch_multiplier = -1
 
     # asin will output values in range [-Pi/2, Pi/2]
     pitch = asin(-1 * vec.y)
@@ -27,7 +24,7 @@ def get_rotator(vec: Vector) -> [float]:
 
     if verbose > 0:
         print(f"[GetRotator]Encoded vector: {vec}")
-    return [yaw * -1, pitch * pitch_multiplier]
+    return [yaw * -1, pitch * -1]
 
 
 def restore_from_rotator(rotator: [float]) -> Vector:

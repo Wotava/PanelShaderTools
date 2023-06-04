@@ -153,6 +153,26 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
 
         target_layer = context.scene.panel_manager.get_active().get_active()
         target_layer.plane_normal = target_location
+
+        target_vert_co = Vector((0.0, 0.0, 0.0))
+        for elem in reversed(self.bm.select_history):
+            if isinstance(elem, bmesh.types.BMVert):
+                target_vert_co = elem.co
+                break
+
+        if target_vert_co == Vector((0.0, 0.0, 0.0)):
+            target_vert_co = self.bm.verts[selection[0][1]].co
+
+        x = target_vert_co.dot(target_layer.plane_normal)
+        print(f"-> {target_vert_co} dot {target_layer.plane_normal} = {x}")
+        y = target_layer.plane_dist_A + target_layer.plane_dist_B
+        print(f"{(x % y) / y} / {(target_vert_co.z % y) / y} z = {target_vert_co.z}")
+        target_layer.plane_offset = (x % y) / y
+        if target_layer.plane_normal.z > 0.001:
+            target_layer.plane_offset = 1 - target_layer.plane_offset
+
+        print(self.bm.verts[selection[0][1]].co)
+
         self.finished = True
         self.report({"INFO"}, "Value set, operator exit")
         return {'FINISHED'}
@@ -180,9 +200,9 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
         self.start_mode = context.mode
         if context.mode != 'EDIT_MESH':
             bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='DESELECT')
         else:
             self.start_mode = 'EDIT'
+        bpy.ops.mesh.select_all(action='DESELECT')
 
         self.cancelled = False
         self.finished = False
