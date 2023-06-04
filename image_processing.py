@@ -233,13 +233,11 @@ class LayerPreset(bpy.types.PropertyGroup):
     def get_pixel_strip(self) -> [float]:
         # TODO adjust
         pixels = []
-        skips = 32
+        target_length = 32
         for layer in self.layers:
             if layer.use_layer:
                 pixels.extend(layer.get_pixel())
-            else:
-                skips -= 1
-        pixels.extend([0] * skips)
+        pixels.extend([0] * (target_length - len(pixels)))
         return pixels
 
     def get_active(self) -> PanelLayer:
@@ -293,8 +291,8 @@ class LayerManager(bpy.types.PropertyGroup):
 
         preset: LayerPreset = self.scene_presets[preset_id]
         pixels = preset.get_pixel_strip()
-        start_pos = preset_id
-        end_pos = preset_id + len(pixels)
+        start_pos = preset_id * len(pixels)
+        end_pos = start_pos + len(pixels)
         image.pixels[start_pos: end_pos] = pixels
         image.update()
 
