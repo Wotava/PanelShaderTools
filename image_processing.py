@@ -313,6 +313,61 @@ class LayerManager(bpy.types.PropertyGroup):
         """Reads presets from specified image and appends them to Scene"""
         pass
 
+    def check_image(self, layout=None) -> bool:
+        box = None
+
+        check_passed = True
+        if self.target_image.use_half_precision:
+            check_passed = False
+            if layout:
+                if not box:
+                    box = layout.box()
+                box.row(align=True).label(text="Using half-precision", icon='ERROR')
+        if self.target_image.colorspace_settings.name != 'Non-Color':
+            check_passed = False
+            if layout:
+                if not box:
+                    box = layout.box()
+                box.row(align=True).label(text="Incorrect color space", icon='ERROR')
+
+        if pow(self.target_image.size[0], 2) < (len(self.scene_presets) * 8):
+            check_passed = False
+            if layout:
+                if not box:
+                    box = layout.box()
+                if len(self.target_image.pixels) / 4 > 256:
+                    box.row(align=True).label(text="256 presets exceeded!", icon='ERROR')
+                else:
+                    box.row(align=True).label(text="Image size is too small", icon='ERROR')
+                
+        if layout and not check_passed:
+            box.row(align=True).operator("panels.adjust_image", text="Adjust", icon='MODIFIER_DATA')
+
+        return check_passed
+
+    def adjust_image(self) -> str:
+        changes = "Adjusted: "
+        if self.target_image.use_half_precision:
+            self.target_image.use_half_precision = False
+            changes += " half precision,"
+        if self.target_image.colorspace_settings.name != 'Non-Color':
+            self.target_image.colorspace_settings.name = 'Non-Color'
+            changes += " color space,"
+
+        if pow(self.target_image.size[0], 2) < (len(self.scene_presets) * 8):
+            for i in range(0, 9):
+                if pow(2, i) > pow(self.target_image.size[0], 2):
+                    changes += f" image size {self.target_image.size[0]}x{self.target_image.size[0]} " \
+                               f"-> {pow(2, i)}x{pow(2, i)}"
+                    self.target_image.scale(1, 1)
+                    self.target_image.pixels[0:4] = [0, 0, 0, 1]
+                    self.target_image.scale(pow(2, i), pow(2, i))
+                    break
+
+        return changes
+
+
+
     def get_active(self) -> LayerPreset:
         """Return ref to active preset"""
         return self.scene_presets[self.active_preset]

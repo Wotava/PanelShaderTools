@@ -132,6 +132,21 @@ class PANELS_OP_BakePresets(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class PANELS_OP_AdjustImage(bpy.types.Operator):
+    """Adjusts image parameters"""
+    bl_label = "Adjust Target Image"
+    bl_idname = "panels.adjust_image"
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.panel_manager.target_image
+
+    def execute(self, context):
+        res = context.scene.panel_manager.adjust_image()
+        self.report({"INFO"}, res)
+        return {'FINISHED'}
+
+
 class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
     """Define plane normal for a layer by selecting either an edge or two vertices"""
     bl_label = "Define Plane Normal"

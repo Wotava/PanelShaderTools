@@ -89,6 +89,8 @@ class DATA_PT_PanelShader(bpy.types.Panel):
             col.label(text="Target Image")
             col = row.column(align=True)
             col.template_ID(manager, "target_image", new="image.new", open="image.open")
+            if manager.target_image:
+                manager.check_image(layout)
             layout.row().operator("panels.bake_presets")
             layout.row().operator("panels.assign_preset")
             layout.row().prop(manager, "use_auto_update", icon='FILE_REFRESH')
