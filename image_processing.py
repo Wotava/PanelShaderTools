@@ -268,6 +268,11 @@ class LayerManager(bpy.types.PropertyGroup):
         description="Enables auto update of target image when any layer parameter is changed",
         default=False
     )
+    use_auto_offset: bpy.props.BoolProperty(
+        name="Update Offset on Normal-set",
+        description="Enables auto update of plane offset to match selected target vertices when setting panel normal",
+        default=True
+    )
 
     def new_preset(self):
         """Create new preset with given name"""

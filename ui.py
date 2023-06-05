@@ -92,6 +92,7 @@ class DATA_PT_PanelShader(bpy.types.Panel):
             layout.row().operator("panels.bake_presets")
             layout.row().operator("panels.assign_preset")
             layout.row().prop(manager, "use_auto_update", icon='FILE_REFRESH')
+            layout.row().prop(manager, "use_auto_offset", icon='MOD_LENGTH')
 
             row = layout.row()
             row.template_list("DATA_UL_PanelLayer", "", preset, "layers", preset,
