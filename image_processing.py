@@ -113,6 +113,18 @@ class PanelLayer(bpy.types.PropertyGroup):
                 setattr(self, item, values[i])
                 i += 1
 
+    def match(self, target: 'LayerPreset'):
+        """Copy all parameters from provided layer, thus matching it"""
+        targets = list(self.__annotations__)
+        i = 0
+        for item in targets:
+            if item == 'plane_normal':
+                self.plane_normal = getattr(target, item)
+                self.plane_normal = self.plane_normal.copy()
+            else:
+                setattr(self, item, getattr(target, item))
+            i += 1
+
     def get_pixel(self) -> [float]:
         """Returns RGBA pixel with encoded values"""
         # Prepare normal vector as a Yaw-Pitch rotator with signed ints

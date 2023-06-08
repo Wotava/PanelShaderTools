@@ -82,6 +82,68 @@ class PANELS_OP_RemoveLayer(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class PANELS_OP_MoveLayer(bpy.types.Operator):
+    """Moves active layer in stack"""
+    bl_label = "Move Preset Layer"
+    bl_idname = "panels.move_layer"
+
+    move_up: bpy.props.BoolProperty(
+        name="Move Selection Up",
+        default=True
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.scene.panel_manager.get_active().layers) > 1
+
+    def execute(self, context):
+        manager = context.scene.panel_manager
+        active_preset = manager.get_active()
+
+        current_index = active_preset.active_layer
+        target_index = current_index
+
+        if self.move_up:
+            target_index -= 1
+        else:
+            target_index += 1
+
+        # Just to make sure
+        if target_index < 0 or target_index > (len(active_preset.layers) - 1):
+            self.report({'ERROR'}, "Index is out of range")
+            return {'CANCELLED'}
+
+        active_preset.layers.move(current_index, target_index)
+        active_preset.active_layer = target_index
+        manager.write_image()
+        return {'FINISHED'}
+
+
+class PANELS_OP_DuplicateLayer(bpy.types.Operator):
+    """Duplicates active layer"""
+    bl_label = "Duplicate Preset Layer"
+    bl_idname = "panels.duplicate_layer"
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.scene.panel_manager.get_active().layers) > 0
+
+    def execute(self, context):
+        manager = context.scene.panel_manager
+        active_preset = manager.get_active()
+
+        current_index = active_preset.active_layer
+        current_layer = active_preset.layers[current_index]
+
+        new_layer = active_preset.layers.add()
+        new_layer.match(current_layer)
+
+        # TODO make an insert instead of adding new item to the end of the list
+        active_preset.active_layer = len(active_preset.layers) - 1
+        manager.write_image()
+        return {'FINISHED'}
+
+
 class PANELS_OP_AssignPreset(bpy.types.Operator):
     """Assign current preset to selected faces"""
     bl_label = "Assign Preset"

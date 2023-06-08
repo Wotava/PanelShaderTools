@@ -102,6 +102,19 @@ class DATA_PT_PanelShader(bpy.types.Panel):
             col = row.column(align=True)
             col.operator("panels.add_layer", icon='ADD', text="")
             col.operator("panels.remove_layer", icon='REMOVE', text="")
+            col.separator()
+
+            col.operator("panels.duplicate_layer", icon='DUPLICATE', text="")
+            col.separator()
+
+            if len(preset.layers) > 2 and preset.active_layer > 0:
+                op = col.operator("panels.move_layer", icon='TRIA_UP', text="")
+                op.move_up = True
+            if len(preset.layers) > 2 and preset.active_layer < (len(preset.layers) - 1):
+                op = col.operator("panels.move_layer", icon='TRIA_DOWN', text="")
+                op.move_up = False
+
+
             if len(preset.layers) > 0:
                 current_layer = preset.get_active()
                 box = layout.box()
