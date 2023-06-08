@@ -41,7 +41,12 @@ class DATA_UL_PanelLayer(bpy.types.UIList):
 
             col = row.column(align=True)
             col.scale_x = 0.5
-            col.label(text="Panel Layer", translate=False, icon='QUESTION')
+
+            if layer.name != "":
+                col.prop(layer, "name", text="", emboss=False, icon='LAYER_ACTIVE')
+            else:
+                col.prop(layer, "name", text="", emboss=False, icon='LAYER_USED')
+
             col = row.column(align=True)
             col.prop(layer, "use_layer", text="")
             return
@@ -71,11 +76,8 @@ class DATA_PT_PanelShader(bpy.types.Panel):
         col = row.column(align=True)
         col.operator("panels.add_preset", icon='ADD', text="")
         col.operator("panels.remove_preset", icon='REMOVE', text="")
-
         col.separator()
-        # Add ops here
-        # col.operator("panels.move_preset_up", icon='ADD', text="")
-        # col.operator("panels.remove_preset", icon='REMOVE', text="")
+        col.operator("panels.duplicate_preset", icon='DUPLICATE', text="")
 
         # Display layer props
         if len(manager.scene_presets) > 0:

@@ -124,6 +124,7 @@ class PanelLayer(bpy.types.PropertyGroup):
             else:
                 setattr(self, item, getattr(target, item))
             i += 1
+        self.name = target.name + " copy"
 
     def get_pixel(self) -> [float]:
         """Returns RGBA pixel with encoded values"""
@@ -226,11 +227,13 @@ class LayerPreset(bpy.types.PropertyGroup):
         default=0
     )
 
-    def add_layer(self, values: [float] = None):
+    def add_layer(self, match_target: PanelLayer = None):
         if len(self.layers) < MAX_LAYERS:
             new_layer = self.layers.add()
-            if values:
-                new_layer.set_values(values)
+            if match_target:
+                new_layer.match(match_target)
+            else:
+                new_layer.name = "Layer Preset №" + str(len(self.layers) - 1)
             return new_layer
         else:
             print(f"Layer cap at {MAX_LAYERS} reached")
@@ -251,6 +254,14 @@ class LayerPreset(bpy.types.PropertyGroup):
                 pixels.extend(layer.get_pixel())
         pixels.extend([0] * (target_length - len(pixels)))
         return pixels
+
+    def match(self, target: 'LayerPreset'):
+        """Copies all layers from target"""
+        target_len = len(target.layers)
+        for i in range(0, target_len):
+            self.add_layer(target.layers[i])
+        self.name = target.name + " copy"
+        self.active_layer = target.active_layer
 
     def get_active(self) -> PanelLayer:
         return self.layers[self.active_layer]

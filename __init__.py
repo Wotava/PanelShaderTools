@@ -40,6 +40,7 @@ classes = [
     operators.PANELS_OP_MoveLayer,
     operators.PANELS_OP_DuplicateLayer,
     operators.PANELS_OP_AssignPreset,
+    operators.PANELS_OP_DuplicatePreset,
     operators.PANELS_OP_BakePresets,
     operators.PANELS_OP_AdjustImage,
     operators.PANELS_OP_DefinePlaneNormal

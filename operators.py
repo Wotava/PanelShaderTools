@@ -180,6 +180,27 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class PANELS_OP_DuplicatePreset(bpy.types.Operator):
+    """Duplicates active preset and all its layers"""
+    bl_label = "Duplicate Preset"
+    bl_idname = "panels.duplicate_preset"
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.scene.panel_manager.scene_presets) > 0
+
+    def execute(self, context):
+        manager = context.scene.panel_manager
+        current_preset = manager.get_active()
+
+        new_preset = manager.scene_presets.add()
+        new_preset.match(current_preset)
+
+        # TODO make an insert instead of adding new item to the end of the list
+        manager.active_preset = len(manager.scene_presets) - 1
+        return {'FINISHED'}
+
+
 class PANELS_OP_BakePresets(bpy.types.Operator):
     """Bakes presets to the specified image"""
     bl_label = "Bake Presets"
