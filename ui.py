@@ -95,6 +95,10 @@ class DATA_PT_PanelShader(bpy.types.Panel):
                 manager.check_image(layout)
             layout.row().operator("panels.bake_presets")
             layout.row().operator("panels.assign_preset")
+
+            row = layout.row(align=True)
+            row.operator("panels.select_by_preset")
+            row.row().operator("panels.select_by_face")
             layout.row().prop(manager, "use_auto_update", icon='FILE_REFRESH')
             layout.row().prop(manager, "use_auto_offset", icon='MOD_LENGTH')
 

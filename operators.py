@@ -4,6 +4,7 @@ import bpy
 import bmesh
 from mathutils import Vector
 import numpy as np
+ATTRIBUTE_NAME = "panel_preset_index"
 
 class DebugOperator(bpy.types.Operator):
     """Debug operator"""
@@ -177,6 +178,82 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
         self.report({'INFO'}, f"Set preset {active_preset_index} on {len(selected)} faces")
         bm.free()
         bpy.ops.object.mode_set(mode='EDIT')
+        return {'FINISHED'}
+
+
+class PANELS_OP_SelectFacesFromPreset(bpy.types.Operator):
+    """Select faces that have current preset assigned to them"""
+    bl_label = "Select Faces by Preset"
+    bl_idname = "panels.select_by_preset"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.object and context.object.type == 'MESH' \
+            and len(context.scene.panel_manager.scene_presets) > 0
+
+    def execute(self, context):
+        # Switch
+        if context.mode != 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+
+        target_id = context.scene.panel_manager.active_preset
+
+        if len(context.selected_objects) == 0:
+            # self.report({'ERROR'}, f"No objects selected or no active object")
+            targets = [context.object]
+        else:
+            targets = context.selected_objects
+
+        for obj in targets:
+            mesh = obj.data
+            bm = bmesh.from_edit_mesh(mesh)
+            attrib = bm.faces.layers.int.get('panel_preset_index')
+            if attrib is None:
+                continue
+
+            for f in bm.faces:
+                if f[attrib] == target_id:
+                    f.select = True
+            bmesh.update_edit_mesh(mesh)
+
+        return {'FINISHED'}
+
+
+class PANELS_OP_SelectPresetFromFace(bpy.types.Operator):
+    """Select preset that is assigned to the active(selected) face"""
+    bl_label = "Select Preset by Face"
+    bl_idname = "panels.select_by_face"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.object and context.object.type == 'MESH' \
+            and context.object.data.total_face_sel == 1 and len(context.scene.panel_manager.scene_presets) > 0
+
+    def execute(self, context):
+        mesh = context.object.data
+        bm = bmesh.from_edit_mesh(mesh)
+        target_id = -1
+
+        attrib = bm.faces.layers.int.get('panel_preset_index')
+        if attrib is None:
+            self.report({'ERROR'}, "No presets assigned to this obj")
+            return {'CANCELLED'}
+
+        for f in bm.faces:
+            if f.select:
+                target_id = f[attrib]
+                break
+
+        if len(context.scene.panel_manager.scene_presets) - 1 >= target_id >= 0:
+            context.scene.panel_manager.active_preset = target_id
+            self.report({'INFO'}, f"Selected preset #{target_id}")
+        else:
+            self.report({'ERROR'}, f"Requested preset #{target_id} is out of range")
+            return {'CANCELLED'}
+        bpy.ops.mesh.select_all(action='DESELECT')
         return {'FINISHED'}
 
 
