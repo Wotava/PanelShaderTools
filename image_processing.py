@@ -208,6 +208,34 @@ class PanelLayer(bpy.types.PropertyGroup):
             attr = getattr(self, item)
             print(item, attr)
 
+    def draw_panel(self, layout, show_operators=True):
+        box = layout.box()
+        row = box.row()
+        row.prop(self, "use_layer", text="Enable Layer")
+
+        row = box.row(align=True)
+        row.prop(self, "plane_normal")
+        if show_operators:
+            row.operator("panels.define_plane_normal", icon='ORIENTATION_NORMAL', text="Set", emboss=True)
+
+        row = box.row(align=True)
+        row.label(text="Plane Data")
+        row.prop(self, "plane_offset", text="Offset")
+        row.prop(self, "plane_dist_A", text="Dist A")
+        row.prop(self, "plane_dist_B", text="Dist B")
+
+        row = box.row(align=True)
+        row.label(text="Decals")
+        row.prop(self, "decal_length", text="Length")
+        row.prop(self, "decal_thickness", text="Thickness")
+
+        row = box.row(align=True)
+        row.label(text="Sectors")
+        row.prop(self, "use_FG_mask", icon='FILE_PARENT', text="Use Previous")
+        row.prop(self, "sector_offset", text="Offset")
+        row.prop(self, "fg_sectors", text="FG")
+        row.prop(self, "bg_sectors", text="BG")
+
 
 class LayerPreset(bpy.types.PropertyGroup):
     # This class handles writing layers to images and swapping their order
@@ -265,6 +293,31 @@ class LayerPreset(bpy.types.PropertyGroup):
 
     def get_active(self) -> PanelLayer:
         return self.layers[self.active_layer]
+
+    def draw_panel(self, layout, show_operators=True):
+        # LAYERS
+        row = layout.row()
+        row.template_list("DATA_UL_PanelLayer", "", self, "layers", self,
+                          "active_layer")
+        col = row.column(align=True)
+        col.operator("panels.add_layer", icon='ADD', text="")
+        col.operator("panels.remove_layer", icon='REMOVE', text="")
+        col.separator()
+
+        col.operator("panels.duplicate_layer", icon='DUPLICATE', text="")
+        col.separator()
+
+        if len(self.layers) > 2 and self.active_layer > 0:
+            op = col.operator("panels.move_layer", icon='TRIA_UP', text="")
+            op.move_up = True
+        if len(self.layers) > 2 and self.active_layer < (len(self.layers) - 1):
+            op = col.operator("panels.move_layer", icon='TRIA_DOWN', text="")
+            op.move_up = False
+
+        if len(self.layers) > 0:
+            current_layer = self.get_active()
+            current_layer.draw_panel(layout, show_operators)
+
 
 
 class LayerManager(bpy.types.PropertyGroup):
@@ -389,8 +442,32 @@ class LayerManager(bpy.types.PropertyGroup):
 
         return changes
 
-
-
     def get_active(self) -> LayerPreset:
         """Return ref to active preset"""
         return self.scene_presets[self.active_preset]
+
+    def draw_panel(self, layout):
+        active_preset = self.get_active()
+
+        # Target Image selection
+        row = layout.row()
+        col = row.column(align=True)
+        col.scale_x = 0.6
+        col.label(text="Target Image")
+        col = row.column(align=True)
+        col.template_ID(self, "target_image", new="image.new", open="image.open")
+        if self.target_image:
+            self.check_image(layout)
+        layout.row().operator("panels.bake_presets")
+        layout.row().operator("panels.assign_preset")
+
+        row = layout.row(align=True)
+        row.operator("panels.select_by_preset")
+        op = row.operator("panels.select_by_face")
+        op.call_edit = False
+        op = row.operator("panels.select_by_face",  text="E")
+        op.call_edit = True
+        layout.row().prop(self, "use_auto_update", icon='FILE_REFRESH')
+        layout.row().prop(self, "use_auto_offset", icon='MOD_LENGTH')
+
+        active_preset.draw_panel(layout)
