@@ -227,12 +227,17 @@ class PANELS_OP_SelectPresetFromFace(bpy.types.Operator):
     bl_idname = "panels.select_by_face"
     bl_options = {'REGISTER', 'UNDO'}
 
+    call_edit: bpy.props.BoolProperty(
+        name="Call Edit Modal",
+        default=False
+    )
+
     @classmethod
     def poll(cls, context):
         return context.object and context.object.type == 'MESH' \
             and context.object.data.total_face_sel == 1 and len(context.scene.panel_manager.scene_presets) > 0
 
-    def execute(self, context):
+    def get_active_preset(self, context):
         mesh = context.object.data
         bm = bmesh.from_edit_mesh(mesh)
         target_id = -1
@@ -247,14 +252,42 @@ class PANELS_OP_SelectPresetFromFace(bpy.types.Operator):
                 target_id = f[attrib]
                 break
 
-        if len(context.scene.panel_manager.scene_presets) - 1 >= target_id >= 0:
-            context.scene.panel_manager.active_preset = target_id
-            self.report({'INFO'}, f"Selected preset #{target_id}")
+        return target_id
+
+    def execute(self, context):
+        if not self.call_edit:
+            target_id = self.get_active_preset(context)
+            if len(context.scene.panel_manager.scene_presets) - 1 >= target_id >= 0:
+                context.scene.panel_manager.active_preset = target_id
+                self.report({'INFO'}, f"Selected preset #{target_id}")
+            else:
+                self.report({'ERROR'}, f"Requested preset #{target_id} is out of range")
+                return {'CANCELLED'}
+            bpy.ops.mesh.select_all(action='DESELECT')
         else:
-            self.report({'ERROR'}, f"Requested preset #{target_id} is out of range")
-            return {'CANCELLED'}
-        bpy.ops.mesh.select_all(action='DESELECT')
+            if self.start_preset:
+                context.scene.panel_manager.active_preset = self.start_preset
+                self.report({'INFO'}, f"Restoring preset {self.start_preset}, operator exit")
         return {'FINISHED'}
+
+    def draw(self, context):
+        layout = self.layout
+        if not self.active_preset:
+            self.active_preset = self.get_active_preset(context)
+        context.scene.panel_manager.scene_presets[self.active_preset].draw_panel(layout, False)
+
+    def invoke(self, context, event):
+        self.cancelled = False
+        self.finished = False
+        start_preset = None
+        if self.call_edit:
+            self.start_preset = context.scene.panel_manager.active_preset
+            self.active_preset = self.get_active_preset(context)
+            context.scene.panel_manager.active_preset = self.active_preset
+            return context.window_manager.invoke_props_dialog(self)
+        else:
+            self.execute(context)
+            return {'FINISHED'}
 
 
 class PANELS_OP_DuplicatePreset(bpy.types.Operator):
