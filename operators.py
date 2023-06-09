@@ -319,11 +319,9 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
 
     def execute(self, context):
         # find selected vertices
-        verts = np.asarray(self.bm.verts)
-        selection = np.asarray([vert.select for vert in verts], dtype=bool)
 
-        selection = np.nonzero(selection)
-        target_location: Vector = self.bm.verts[selection[0][1]].co - self.bm.verts[selection[0][0]].co
+        selection = [vert.co for vert in self.bm.verts if vert.select]
+        target_location: Vector = (selection[0] - selection[1])
         target_location.normalize()
 
         target_layer = context.scene.panel_manager.get_active().get_active()
@@ -337,8 +335,10 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
                     break
 
             if target_vert_co == Vector((0.0, 0.0, 0.0)):
-                target_vert_co = self.bm.verts[selection[0][1]].co
+                target_vert_co = selection[0]
 
+            world_matrix = context.active_object.matrix_world
+            target_vert_co = world_matrix @ target_vert_co
             x = target_vert_co.dot(target_layer.plane_normal)
             y = target_layer.plane_dist_A + target_layer.plane_dist_B
             target_layer.plane_offset = (x % y) / y
