@@ -1,4 +1,6 @@
 import bpy
+import bmesh
+import numpy as np
 from mathutils import Vector
 from math import pi
 from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, check_mask, rotator_unpack_test
@@ -236,6 +238,11 @@ class PanelLayer(bpy.types.PropertyGroup):
         row.prop(self, "fg_sectors", text="FG")
         row.prop(self, "bg_sectors", text="BG")
 
+    def reset_to_default(self):
+        targets = list(self.__annotations__)
+        for item in targets:
+            self.property_unset(item)
+
 
 class LayerPreset(bpy.types.PropertyGroup):
     # This class handles writing layers to images and swapping their order
@@ -267,8 +274,8 @@ class LayerPreset(bpy.types.PropertyGroup):
             print(f"Layer cap at {MAX_LAYERS} reached")
             return None
 
-    def remove_layer(self, index: int = None):
-        if index:
+    def remove_layer(self, index: int = -1):
+        if index > -1:
             self.layers.remove(index)
         else:
             self.layers.remove(self.active_layer)
@@ -293,6 +300,11 @@ class LayerPreset(bpy.types.PropertyGroup):
 
     def get_active(self) -> PanelLayer:
         return self.layers[self.active_layer]
+
+    def clean(self):
+        self.active_layer = -1
+        for i in range(len(self.layers), -1, -1):
+            self.remove_layer(i)
 
     def draw_panel(self, layout, show_operators=True):
         # LAYERS
@@ -354,12 +366,33 @@ class LayerManager(bpy.types.PropertyGroup):
         """Create new preset with given name"""
         return self.scene_presets.add()
 
-    def remove_preset(self, index: int = None):
-        """Remove  and do something with linked objects"""
+    def remove_preset(self, index: int = None, destroy=False):
+        """Remove and do something with linked objects"""
         if index:
-            self.scene_presets.remove(index)
+            target = index
         else:
-            self.scene_presets.remove(self.active_preset)
+            target = self.active_preset
+
+        if destroy:
+            attrib_array = np.zeros((1), int)
+            for obj in bpy.data.objects:
+                if obj.type != 'MESH':
+                    continue
+
+                attrib = obj.data.attributes.get('panel_preset_index')
+                if not attrib:
+                    continue
+
+                attrib = attrib.data
+                attrib_array.resize((len(obj.data.polygons)))
+                attrib.foreach_get('value', attrib_array)
+                attrib_array[attrib_array == target] = 0
+                attrib_array[attrib_array > target] -= 1
+                attrib.foreach_set('value', attrib_array.tolist())
+                obj.data.update()
+            self.scene_presets.remove(target)
+        else:
+            self.scene_presets[target].clean()
 
     def duplicate_preset(self, index: int):
         """Duplicate preset at the given index"""
@@ -384,6 +417,12 @@ class LayerManager(bpy.types.PropertyGroup):
 
         for i in range(0, len(self.scene_presets)):
             self.write_preset(i, image)
+
+    def clean_image(self, image: bpy.types.Image = None) -> None:
+        if not image:
+            image = self.target_image
+        for i in range(0, len(image.pixels)):
+            image.pixels[i] = 0.0
 
     def read_image(self):
         """Reads presets from specified image and appends them to Scene"""

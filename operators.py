@@ -6,6 +6,12 @@ from mathutils import Vector
 import numpy as np
 ATTRIBUTE_NAME = "panel_preset_index"
 
+
+def update_objects(targets):
+    for obj in targets:
+        if obj.type == 'MESH':
+            obj.data.update()
+
 class DebugOperator(bpy.types.Operator):
     """Debug operator"""
     bl_idname = "material.debug_panel_shader"
@@ -36,19 +42,34 @@ class PANELS_OP_AddPreset(bpy.types.Operator):
 
 
 class PANELS_OP_RemovePreset(bpy.types.Operator):
-    """Adds new panel preset, used in UI"""
+    """Resets selected preset to defaults or deletes them completely if prompted"""
     bl_label = "Remove Panel Preset"
     bl_idname = "panels.remove_preset"
+
+    destructive: bpy.props.BoolProperty(
+        name="Delete from Stack",
+        description="Deletes this preset from stack and updates references on all objects. "
+                    "WARNING: can be slow in large scenes",
+        default=False
+    )
 
     @classmethod
     def poll(cls, context):
         return len(context.scene.panel_manager.scene_presets) > 0
 
     def execute(self, context):
-        context.scene.panel_manager.remove_preset()
-        if context.scene.panel_manager.active_preset > 0:
-            context.scene.panel_manager.active_preset -= 1
+        if self.destructive:
+            context.scene.panel_manager.remove_preset(destroy=True)
+            if context.scene.panel_manager.active_preset > 0:
+                context.scene.panel_manager.active_preset -= 1
+            context.scene.panel_manager.clean_image()
+        else:
+            context.scene.panel_manager.remove_preset(destroy=False)
+        bpy.ops.panels.bake_presets()
         return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
 
 
 class PANELS_OP_AddLayer(bpy.types.Operator):
@@ -64,6 +85,8 @@ class PANELS_OP_AddLayer(bpy.types.Operator):
         # TODO make it insert layer next to active
         context.scene.panel_manager.get_active().add_layer()
         context.scene.panel_manager.get_active().active_layer = len(context.scene.panel_manager.get_active().layers) - 1
+        bpy.ops.panels.bake_presets()
+        update_objects(context.visible_objects)
         return {'FINISHED'}
 
 
@@ -80,6 +103,8 @@ class PANELS_OP_RemoveLayer(bpy.types.Operator):
         # TODO make it insert layer next to active
         context.scene.panel_manager.get_active().remove_layer()
         context.scene.panel_manager.get_active().active_layer = len(context.scene.panel_manager.get_active().layers) - 1
+        bpy.ops.panels.bake_presets()
+        update_objects(context.visible_objects)
         return {'FINISHED'}
 
 
@@ -117,6 +142,7 @@ class PANELS_OP_MoveLayer(bpy.types.Operator):
         active_preset.layers.move(current_index, target_index)
         active_preset.active_layer = target_index
         manager.write_image()
+        update_objects(context.visible_objects)
         return {'FINISHED'}
 
 
@@ -142,6 +168,7 @@ class PANELS_OP_DuplicateLayer(bpy.types.Operator):
         # TODO make an insert instead of adding new item to the end of the list
         active_preset.active_layer = len(active_preset.layers) - 1
         manager.write_image()
+        update_objects(context.visible_objects)
         return {'FINISHED'}
 
 
