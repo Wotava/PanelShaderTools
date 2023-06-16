@@ -1,9 +1,11 @@
+import math
+
 import bpy
 import bmesh
 import numpy as np
 from mathutils import Vector
 from math import pi
-from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, check_mask, rotator_unpack_test
+from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, check_mask, encode_by_rule
 from .utils import get_rotator
 
 MAX_LAYERS = 8
@@ -14,6 +16,62 @@ def auto_update(self, context) -> None:
     if context.scene.panel_manager.use_auto_update:
         manager: LayerManager = context.scene.panel_manager
         manager.write_preset(manager.active_preset)
+
+
+TEST_RULESET = {
+    "distance_sum":     dict(min_value=0, max_value=1000,   raw=False, bits=16),
+    "distance_remap":   dict(min_value=0, max_value=1,      raw=False, bits=10),
+    "plane_offset":     dict(min_value=0, max_value=1,      raw=False, bits=10),
+    "decal_thickness":  dict(min_value=0, max_value=4,      raw=False, bits=6),
+    "decal_length":     dict(min_value=0, max_value=32,     raw=False, bits=6),
+    "use_fg":           dict(min_value=0, max_value=1,      raw=True,  bits=1),
+    "fg_sectors":       dict(min_value=0, max_value=15,     raw=True,  bits=4),
+    "bg_sectors":       dict(min_value=0, max_value=15,     raw=True,  bits=4),
+    "sector_offset":    dict(min_value=0, max_value=127,    raw=True,  bits=5),
+
+    "normal_yaw":       dict(min_value=-(pi/2), max_value=(pi/2), raw=False, bits=16),
+    "normal_pitch":     dict(min_value=-(pi/2), max_value=(pi/2), raw=False, bits=16),
+    "bool_generic":     dict(min_value=0, max_value=1,      raw=True,  bits=1)
+}
+
+
+GLOBAL_RULESET = {
+    "distance_sum":     dict(min_value=0, max_value=1000,   raw=False, bits=32),
+    "distance_remap":   dict(min_value=0, max_value=1,      raw=False, bits=16),
+    "offset":           dict(min_value=0, max_value=1,      raw=False, bits=16),
+    "decal_thickness":  dict(min_value=0, max_value=4,      raw=False, bits=12),
+    "use_fg":           dict(min_value=0, max_value=1,      raw=True,  bits=1),
+    "fg_sectors":       dict(min_value=0, max_value=63,     raw=True,  bits=6),
+    "bg_sectors":       dict(min_value=0, max_value=63,     raw=True,  bits=6),
+    "sector_offset":    dict(min_value=0, max_value=127,    raw=True,  bits=7),
+    "panel_type":       dict(min_value=0, max_value=10,     raw=True,  bits=4),
+
+    # Vec3
+    "3D_pos_x":         dict(min_value=-128, max_value=128, raw=False, bits=32),
+    "3D_pos_y":         dict(min_value=-128, max_value=128, raw=False, bits=32),
+    "3D_pos_z":         dict(min_value=-128, max_value=128, raw=False, bits=32),
+
+    # Vec2 types (two values input)
+    "2D_pos_x":         dict(min_value=-128, max_value=128, raw=False, bits=32),
+    "2D_pos_y":         dict(min_value=-128, max_value=128, raw=False, bits=32),
+
+    "normal_yaw":       dict(min_value=-(pi/2), max_value=(pi/2), raw=False, bits=24),
+    "normal_pitch":     dict(min_value=-(pi/2), max_value=(pi/2), raw=False, bits=24),
+
+    "tile_dir_yaw":     dict(min_value=-pi,     max_value=pi,       raw=False, bits=25),
+    "tile_dir_pitch":   dict(min_value=(-pi/2), max_value=(pi/2),   raw=False, bits=23),
+
+    "divs":             dict(min_value=2, max_value=64,     raw=True,  bits=6),
+    "angle_offset":     dict(min_value=0, max_value=(pi/2), raw=False, bits=12),
+    "remap_angular":    dict(min_value=0, max_value=(pi/2), raw=False, bits=12),
+
+    "tile_dir_2d":      dict(min_value=0, max_value=1,      raw=False, bits=32),
+    "tile_dist":        dict(min_value=0, max_value=1000,   raw=False, bits=16),
+    "line_direction":   dict(min_value=0, max_value=1,      raw=False, bits=32),
+
+    # Utility
+    "bool_generic":     dict(min_value=0, max_value=1,      raw=True,  bits=1)
+}
 
 
 class PanelLayer(bpy.types.PropertyGroup):
@@ -193,17 +251,65 @@ class PanelLayer(bpy.types.PropertyGroup):
             print(f"writing {r_channel}, {g_channel}, {b_channel}, {a_channel}")
         return [r_channel, g_channel, b_channel, a_channel]
 
-    def get_values(self):
-        # TODO fix this mess too
-        pixels = []
-        for item in list(self.__annotations__):
-            attr = getattr(self, item)
-            print(attr)
-            if type(attr) is Vector:
-                pixels.extend(attr)
+    def get_pixel_alt(self) -> [float]:
+        yaw, pitch = get_rotator(self.plane_normal.normalized())
+        distance_sum = self.plane_dist_A + self.plane_dist_B
+        if distance_sum != 0:
+            distance_remap = self.plane_dist_B / distance_sum
+        else:
+            distance_remap = 0
+
+        # "Simply" define lists of values for encoding like before, but
+        # all the nasty stuff is hidden in bit_encoding.py and encoding
+        # relies on adjustable rule lists with ranges and depths per value
+        
+        # Placeholder for enum check
+        if True:
+            encode_rule_r = [
+                [yaw,   "normal_yaw"],
+                [pitch, "normal_pitch"]
+            ]
+            r_packed = encode_by_rule(encode_rule_r, TEST_RULESET)
+            r_channel, r_flip = as_float_denormalized(r_packed)
+            
+            encode_rule_g = [
+                [distance_sum, "distance_sum"],
+                [distance_remap, "distance_remap"],
+                [self.decal_length, "decal_length"]
+            ]
+            g_packed = encode_by_rule(encode_rule_r, TEST_RULESET)
+            g_channel, g_flip = as_float_denormalized(g_packed)
+            
+            encode_rule_b = [
+                [int(g_flip), "bool_generic"],
+                [int(r_flip), "bool_generic"],
+                [self.plane_offset,    "plane_offset"],
+                [self.decal_thickness, "decal_thickness"],
+                [self.fg_sectors, "fg_sectors"],
+                [self.bg_sectors, "bg_sectors"],
+                [self.sector_offset, "sector_offset"],
+                [0, "bool_generic"]
+            ]
+            b_packed = encode_by_rule(encode_rule_r, TEST_RULESET)
+            if check_mask(b_packed):
+                b_flip = True
+                b_packed ^= 1
+                b_channel = as_float_denormalized(b_packed)[0]
             else:
-                pixels.append(float(attr))
-        return pixels
+                b_flip = False
+                b_channel = as_float(b_packed)
+
+            a_channel = [int(self.use_FG_mask), 0]
+            a_packed = pack_manual(a_channel, [1, 1])
+
+            if check_mask(a_packed):
+                a_packed ^= 1
+                a_channel = as_float_denormalized(a_packed)[0]
+            else:
+                a_channel = as_float(a_packed)
+
+            return [r_channel, g_channel, b_channel, a_channel]
+
 
     def print_values(self):
         for item in list(self.__annotations__):

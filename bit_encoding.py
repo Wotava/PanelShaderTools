@@ -1,7 +1,11 @@
 from math import pi, cos, sin
 from struct import pack, unpack
+from heapq import heapreplace
 verbose = 0
 
+
+def clamp(val, bottom_limit, top_limit):
+    return max(bottom_limit, min(val, top_limit))
 
 def map_float_to_int_range(value: float, range_min: float, range_max: float, bit_depth: int) -> int:
     int_max = pow(2, bit_depth) - 1
@@ -67,6 +71,157 @@ def as_uint(target: float, endian='big') -> int:
         fmt_f = '<f'
     bytepres = pack(fmt_f, target)
     return unpack(fmt_i, bytepres)[0]
+
+
+def encode_int_by_rule(value: float, rule: {}) -> int:
+    if rule["raw"]:
+        return clamp(value, rule["min_value"], rule["max_value"])
+    else:
+        return map_float_to_int_range(value, rule["min_value"], rule["max_value"], rule["bits"])
+
+
+def encode_by_rule(values: [], target_ruleset: {}) -> int:
+    channels = []
+
+    active_channel = 0
+    bits_cumulative = 0
+    for value in values:
+        pass
+
+
+TEST_dict = {
+    "Distance": 32,
+    "Remap": 16,
+    "Offset": 16,
+    "DecalThickness": 12,
+    "UseFG": 1,
+    "FGSectors": 6,
+    "BGSectors": 6,
+    "SectorOffset": 7,
+    "2D Position.x": 32,
+    "2D Position.y": 32,
+    "Normal.yaw": 24,
+    "Normal.pitch": 24,
+    "Divs": 6,
+    "AngleOffset": 12,
+    "RemapAngular": 12,
+}
+
+TEST_list = [
+    [101,   32, "Distance"],
+    [111,   16, "Remap"],
+    [1,     16, "Offset"],
+    [76,    12, "DecalThickness"],
+    [32,    32, "2D Position.x"],
+    [12,    32, "2D Position.y"],
+    [22,    24, "Normal.yaw"],
+    [2123,  24, "Normal.pitch"],
+    [211,   6,  "Divs"],
+    [54,    12, "AngleOffset"],
+    [22,    12, "RemapAngular"],
+    [1, 1, "UseFG"],
+    [20, 6, "FGSectors"],
+    [12, 6, "BGSectors"],
+    [5, 7, "SectorOffset"],
+    [1, 4, "PanelType"],
+    [1, 4, "flip_p1"],
+    [1, 4, "flip_p2"],
+]
+
+
+def sublist_creator(values, splits):
+    # Based on  https://stackoverflow.com/a/61649667
+    # and       https://stackoverflow.com/a/613218
+    bins = [[0] for _ in range(splits)]
+    values = sorted(values, reverse=True, key=lambda item: item[1])
+
+    # least[0] holds sum of all values in a "bin"
+    for i in values:
+        bit = i[1]
+        # check if smallest bin is above 32 limit
+        if bins[0][0] + bit > 32:
+            raise ValueError('Cant pack stuff effectively at all')
+        least = bins[0]
+        least[0] += bit
+        least.append(i)
+        heapreplace(bins, least)
+
+    return [x[1:] for x in bins]
+
+
+def bool_list_to_mask(b_list: []) -> int:
+    i = 0
+    for val in b_list:
+        i = i << 1 | int(val)
+    return i
+
+
+def ultra_generic_packer(values: [], validate=False) -> [int]:
+    prepacked_channels = sublist_creator(values, 8)
+    packed_channels = [0] * 8
+
+    # pack values
+    for i, channel in enumerate(prepacked_channels):
+        packed = 0
+        bits_sum = 0
+        for pair in channel:
+            value, bit, name = pair
+            if name == 'flip_p1':
+                p1_target = i
+            elif name == 'flip_p2':
+                p2_target = i
+            bits_sum += bit
+            packed = packed << bit | value
+        packed_channels[i] = packed
+
+    flips = [check_mask(val) for val in packed_channels]
+    for i, flip in enumerate(flips):
+        if flip:
+            packed_channels[i] ^= (1 << 30)
+    flip_p1 = flips[0:4]
+    flip_p2 = flips[4:]
+    packed_channels[p1_target] = ((packed_channels[p1_target] >> 4) << 4) | bool_list_to_mask(flip_p1)
+    packed_channels[p2_target] = ((packed_channels[p2_target] >> 4) << 4) | bool_list_to_mask(flip_p2)
+
+    # call validator
+    print(flips)
+    if validate:
+        validate_generic_pack(packed_channels, prepacked_channels)
+    return packed_channels
+
+
+def validate_generic_pack(packed_values: [], original_values: []) -> [str]:
+    channel_names = ['color1.x', 'color1.y', 'color1.z', 'color1a', 'color2.x', 'color2.y', 'color2.z', 'color2a']
+    code = []
+
+    # unpack flip-flags (works)
+    for index, channel in enumerate(original_values):
+        for pair in channel:
+            value, bit, name = pair
+            if name == 'flip_p1':
+                p1_target = packed_values[index]
+                break
+            elif name == 'flip_p2':
+                p2_target = packed_values[index]
+                break
+    flips = []
+    targ = [p1_target, p2_target]
+    for n in range(2):
+        val = targ[n]
+        for i in range(4):
+            flips.append(bool(val & 1))
+            val >>= 1
+        if n == 0:  # TODO replace
+            flips.reverse()
+    print(flips)
+    for index, flip in enumerate(reversed(flips)):
+        if flip:
+            packed_values[index] ^= (1 << 30)
+
+    # unpack values
+    for channel in original_values:
+        for value in reversed(channel):
+            pass
 
 
 def pack_manual(target: [int], bits_per_val: [int]) -> int:
