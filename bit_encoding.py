@@ -1,8 +1,8 @@
 from math import pi, cos, sin
 from struct import pack, unpack
 from heapq import heapreplace
+import random
 verbose = 0
-
 
 def clamp(val, bottom_limit, top_limit):
     return max(bottom_limit, min(val, top_limit))
@@ -89,24 +89,6 @@ def encode_by_rule(values: [], target_ruleset: {}) -> int:
         pass
 
 
-TEST_dict = {
-    "Distance": 32,
-    "Remap": 16,
-    "Offset": 16,
-    "DecalThickness": 12,
-    "UseFG": 1,
-    "FGSectors": 6,
-    "BGSectors": 6,
-    "SectorOffset": 7,
-    "2D Position.x": 32,
-    "2D Position.y": 32,
-    "Normal.yaw": 24,
-    "Normal.pitch": 24,
-    "Divs": 6,
-    "AngleOffset": 12,
-    "RemapAngular": 12,
-}
-
 TEST_list = [
     [101,   32, "Distance"],
     [111,   16, "Remap"],
@@ -116,7 +98,7 @@ TEST_list = [
     [12,    32, "2D Position.y"],
     [22,    24, "Normal.yaw"],
     [2123,  24, "Normal.pitch"],
-    [211,   6,  "Divs"],
+    [54,   6,  "Divs"],
     [54,    12, "AngleOffset"],
     [22,    12, "RemapAngular"],
     [1, 1, "UseFG"],
@@ -124,9 +106,16 @@ TEST_list = [
     [12, 6, "BGSectors"],
     [5, 7, "SectorOffset"],
     [1, 4, "PanelType"],
-    [1, 4, "flip_p1"],
-    [1, 4, "flip_p2"],
+    [15, 4, "flip_p1"],
+    [15, 4, "flip_p2"],
 ]
+
+
+def randomize_test():
+    for i, val in enumerate(TEST_list):
+        ceil = (2**val[1]) - 1
+        new_val = int(random.random() * ceil)
+        TEST_list[i][0] = new_val
 
 
 def sublist_creator(values, splits):
@@ -184,7 +173,6 @@ def ultra_generic_packer(values: [], validate=False) -> [int]:
     packed_channels[p2_target] = ((packed_channels[p2_target] >> 4) << 4) | bool_list_to_mask(flip_p2)
 
     # call validator
-    print(flips)
     if validate:
         validate_generic_pack(packed_channels, prepacked_channels)
     return packed_channels
@@ -193,7 +181,6 @@ def ultra_generic_packer(values: [], validate=False) -> [int]:
 def validate_generic_pack(packed_values: [], original_values: []) -> [str]:
     channel_names = ['color1.x', 'color1.y', 'color1.z', 'color1a', 'color2.x', 'color2.y', 'color2.z', 'color2a']
     code = []
-
     # unpack flip-flags (works)
     for index, channel in enumerate(original_values):
         for pair in channel:
@@ -208,20 +195,26 @@ def validate_generic_pack(packed_values: [], original_values: []) -> [str]:
     targ = [p1_target, p2_target]
     for n in range(2):
         val = targ[n]
+        flips_l = []
         for i in range(4):
-            flips.append(bool(val & 1))
+            flips_l.append(bool(val & 1))
             val >>= 1
-        if n == 0:  # TODO replace
-            flips.reverse()
-    print(flips)
-    for index, flip in enumerate(reversed(flips)):
+        flips_l.reverse()
+        flips.extend(flips_l)
+    for index, flip in enumerate(flips):
         if flip:
             packed_values[index] ^= (1 << 30)
-
     # unpack values
-    for channel in original_values:
-        for value in reversed(channel):
-            pass
+    for index, channel in enumerate(original_values):
+        packed_channel = packed_values[index]
+        for block in reversed(channel):
+            value, bit, name = block
+            test_value = packed_channel & (2**bit - 1)
+            packed_channel >>= bit
+            if test_value == value:
+                print(f"{name} matches")
+            else:
+                print(f"{name} doesn't match, {value} != {test_value}")
 
 
 def pack_manual(target: [int], bits_per_val: [int]) -> int:
