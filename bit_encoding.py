@@ -90,24 +90,24 @@ def encode_by_rule(values: [], target_ruleset: {}) -> int:
 
 
 TEST_list = [
-    [101,   32, "Distance"],
-    [111,   16, "Remap"],
-    [1,     16, "Offset"],
-    [76,    12, "DecalThickness"],
-    [32,    32, "2D Position.x"],
-    [12,    32, "2D Position.y"],
-    [22,    24, "Normal.yaw"],
-    [2123,  24, "Normal.pitch"],
-    [54,   6,  "Divs"],
-    [54,    12, "AngleOffset"],
-    [22,    12, "RemapAngular"],
-    [1, 1, "UseFG"],
-    [20, 6, "FGSectors"],
-    [12, 6, "BGSectors"],
-    [5, 7, "SectorOffset"],
-    [1, 4, "PanelType"],
-    [15, 4, "flip_p1"],
-    [15, 4, "flip_p2"],
+    [101,   32, "Distance", "float"],
+    [111,   16, "Remap", "float"],
+    [1,     16, "Offset", "float"],
+    [76,    12, "DecalThickness", "float"],
+    [32,    32, "2D Position.x", "float2"],
+    [12,    32, "2D Position.y", "float2"],
+    [22,    24, "Normal_yaw", "float"],
+    [2123,  24, "Normal_pitch", "float"],
+    [54,   6,  "Divs", "int"],
+    [54,    12, "AngleOffset", "float"],
+    [22,    12, "RemapAngular", "float"],
+    [1, 1, "UseFG", "bool"],
+    [20, 6, "FGSectors", "int"],
+    [12, 6, "BGSectors", "int"],
+    [5, 7, "SectorOffset", "int"],
+    [1, 4, "PanelType", "int"],
+    [15, 4, "flip_p1", "bool"],
+    [15, 4, "flip_p2", "bool"],
 ]
 
 
@@ -178,44 +178,73 @@ def ultra_generic_packer(values: [], validate=False) -> [int]:
     return packed_channels
 
 
-def validate_generic_pack(packed_values: [], original_values: []) -> [str]:
+def validate_generic_pack(packed_values: [], original_values: []) -> str:
     channel_names = ['color1.x', 'color1.y', 'color1.z', 'color1a', 'color2.x', 'color2.y', 'color2.z', 'color2a']
-    code = []
+    flip_names = ['flip_r', 'flip_g', 'flip_b', 'flip_a']
+    code = ""
+
     # unpack flip-flags (works)
+    p1_target, p2_target = None, None
     for index, channel in enumerate(original_values):
         for pair in channel:
             value, bit, name = pair
             if name == 'flip_p1':
-                p1_target = packed_values[index]
+                p1_target = index
                 break
             elif name == 'flip_p2':
-                p2_target = packed_values[index]
+                p2_target = index
                 break
     flips = []
+    if not p1_target or not p2_target:
+        raise RuntimeError("Flip flags were not found!")
     targ = [p1_target, p2_target]
     for n in range(2):
-        val = targ[n]
+        val = packed_values[targ[n]]
         flips_l = []
         for i in range(4):
+            # get bitflag
             flips_l.append(bool(val & 1))
             val >>= 1
+
+            # write the rule to the code
+            code += (flip_names[i]+str(n+1)) + " = " + channel_names[targ[n]] + " & 1; \n"
+            code += channel_names[targ[n]] + " >>= 1; \n"
+        code += "\n"
+
         flips_l.reverse()
         flips.extend(flips_l)
+
+    # add flip code to output
+    for n in range(2):
+        for i in range(4):
+            code += f"if ({flip_names[i]+str(n+1)})" + " { \n"
+            code += f"    {channel_names[i + (4*n)]} ^= (1 << 30); \n"
+            code += "}; \n"
+    code += "\n"
+
     for index, flip in enumerate(flips):
         if flip:
             packed_values[index] ^= (1 << 30)
+
     # unpack values
     for index, channel in enumerate(original_values):
         packed_channel = packed_values[index]
         for block in reversed(channel):
             value, bit, name = block
-            test_value = packed_channel & (2**bit - 1)
-            packed_channel >>= bit
-            if test_value == value:
-                print(f"{name} matches")
-            else:
-                print(f"{name} doesn't match, {value} != {test_value}")
+            if name[0:5] != "flip":
+                test_value = packed_channel & (2**bit - 1)
+                if test_value == value:
+                    print(f"{name} matches")
+                else:
+                    print(f"{name} doesn't match, {value} != {test_value}")
 
+                # add code
+                code += f"{name} = {channel_names[index]} & (pow(2, {bit}) - 1); \n"
+                code += f"{channel_names[index]} >>= {bit}; \n"
+
+            packed_channel >>= bit
+
+    print(code)
 
 def pack_manual(target: [int], bits_per_val: [int]) -> int:
     """Pack multiple int values with varying length into one int32 value with bitwise operations"""
