@@ -36,41 +36,41 @@ TEST_RULESET = {
 
 
 GLOBAL_RULESET = {
-    "distance_sum":     dict(min_value=0, max_value=1000,   raw=False, bits=32),
-    "distance_remap":   dict(min_value=0, max_value=1,      raw=False, bits=16),
-    "offset":           dict(min_value=0, max_value=1,      raw=False, bits=16),
-    "decal_thickness":  dict(min_value=0, max_value=4,      raw=False, bits=12),
-    "use_fg":           dict(min_value=0, max_value=1,      raw=True,  bits=1),
-    "fg_sectors":       dict(min_value=0, max_value=63,     raw=True,  bits=6),
-    "bg_sectors":       dict(min_value=0, max_value=63,     raw=True,  bits=6),
-    "sector_offset":    dict(min_value=0, max_value=127,    raw=True,  bits=7),
-    "panel_type":       dict(min_value=0, max_value=10,     raw=True,  bits=4),
+    "distance":         dict(type="float", min_value=0, max_value=1000,   raw=False, bits=32),
+    "remap":            dict(type="float", min_value=0, max_value=1,      raw=False, bits=16),
+    "offset":           dict(type="float", min_value=0, max_value=1,      raw=False, bits=16),
+    "decal_thickness":  dict(type="float", min_value=0, max_value=4,      raw=False, bits=12),
+    "use_fg":           dict(type="bool", min_value=0, max_value=1,      raw=True,  bits=1),
+    "fg_sectors":       dict(type="int", min_value=0, max_value=63,     raw=True,  bits=6),
+    "bg_sectors":       dict(type="int", min_value=0, max_value=63,     raw=True,  bits=6),
+    "sector_offset":    dict(type="int", min_value=0, max_value=127,    raw=True,  bits=7),
+    "panel_type":       dict(type="int", min_value=0, max_value=10,     raw=True,  bits=4),
 
     # Vec3
-    "3D_pos_x":         dict(min_value=-128, max_value=128, raw=False, bits=32),
-    "3D_pos_y":         dict(min_value=-128, max_value=128, raw=False, bits=32),
-    "3D_pos_z":         dict(min_value=-128, max_value=128, raw=False, bits=32),
+    "3D_pos.x":         dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
+    "3D_pos.y":         dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
+    "3D_pos.z":         dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
 
     # Vec2 types (two values input)
-    "2D_pos_x":         dict(min_value=-128, max_value=128, raw=False, bits=32),
-    "2D_pos_y":         dict(min_value=-128, max_value=128, raw=False, bits=32),
+    "2D_pos.x":         dict(type="vec2", min_value=-128, max_value=128, raw=False, bits=32),
+    "2D_pos.y":         dict(type="vec2", min_value=-128, max_value=128, raw=False, bits=32),
 
-    "normal_yaw":       dict(min_value=-(pi/2), max_value=(pi/2), raw=False, bits=24),
-    "normal_pitch":     dict(min_value=-(pi/2), max_value=(pi/2), raw=False, bits=24),
+    "normal_yaw":       dict(type="float", min_value=-(pi/2), max_value=(pi/2), raw=False, bits=24),
+    "normal_pitch":     dict(type="float", min_value=-(pi/2), max_value=(pi/2), raw=False, bits=24),
 
-    "tile_dir_yaw":     dict(min_value=-pi,     max_value=pi,       raw=False, bits=25),
-    "tile_dir_pitch":   dict(min_value=(-pi/2), max_value=(pi/2),   raw=False, bits=23),
+    "tile_dir_yaw":     dict(type="float", min_value=-pi,     max_value=pi,       raw=False, bits=25),
+    "tile_dir_pitch":   dict(type="float", min_value=(-pi/2), max_value=(pi/2),   raw=False, bits=23),
 
-    "divs":             dict(min_value=2, max_value=64,     raw=True,  bits=6),
-    "angle_offset":     dict(min_value=0, max_value=(pi/2), raw=False, bits=12),
-    "remap_angular":    dict(min_value=0, max_value=(pi/2), raw=False, bits=12),
+    "divs":             dict(type="int", min_value=2, max_value=64,     raw=True,  bits=6),
+    "angle_offset":     dict(type="float", min_value=0, max_value=(pi/2), raw=False, bits=12),
+    "remap_angular":    dict(type="float", min_value=0, max_value=(pi/2), raw=False, bits=12),
 
-    "tile_dir_2d":      dict(min_value=0, max_value=1,      raw=False, bits=32),
-    "tile_dist":        dict(min_value=0, max_value=1000,   raw=False, bits=16),
-    "line_direction":   dict(min_value=0, max_value=1,      raw=False, bits=32),
+    "tile_dir_2d":      dict(type="float", min_value=0, max_value=1,      raw=False, bits=32),
+    "tile_dist":        dict(type="float", min_value=0, max_value=1000,   raw=False, bits=16),
+    "line_direction":   dict(type="float", min_value=0, max_value=1,      raw=False, bits=32),
 
     # Utility
-    "bool_generic":     dict(min_value=0, max_value=1,      raw=True,  bits=1)
+    "flip_block":     dict(type="bool", min_value=0, max_value=1,      raw=True,  bits=1)
 }
 
 
