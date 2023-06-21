@@ -204,7 +204,7 @@ def ultra_generic_packer(values: [], validate=False) -> [int]:
     return packed_channels
 
 
-def validate_generic_pack(packed_values: [], original_values: []) -> str:
+def validate_generic_pack(packed_values: [], original_values: [], print_code=False) -> str:
     channel_names = ['color1.x', 'color1.y', 'color1.z', 'color1a', 'color2.x', 'color2.y', 'color2.z', 'color2a']
     flip_names = ['flip_r', 'flip_g', 'flip_b', 'flip_a']
     declared_variables = []
@@ -220,10 +220,8 @@ def validate_generic_pack(packed_values: [], original_values: []) -> str:
             value, bit, name, rule = pair
             if name == 'flip_p1':
                 p1_target = index
-                break
             elif name == 'flip_p2':
                 p2_target = index
-                break
     flips = []
     if not p1_target or not p2_target:
         raise RuntimeError("Flip flags were not found!")
@@ -315,7 +313,9 @@ def validate_generic_pack(packed_values: [], original_values: []) -> str:
             packed_channel >>= bit
 
     code += "//GENERATED CODE END \n"
-    print(code)
+    if print_code:
+        print(code)
+    return code
 
 
 def pack_manual(target: [int], bits_per_val: [int]) -> int:
