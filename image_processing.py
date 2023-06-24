@@ -5,7 +5,8 @@ import bmesh
 import numpy as np
 from mathutils import Vector
 from math import pi
-from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, check_mask, encode_by_rule
+from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, check_mask, \
+    ultra_generic_packer, encode_by_rule
 from .utils import get_rotator
 
 MAX_LAYERS = 8
@@ -19,58 +20,61 @@ def auto_update(self, context) -> None:
 
 
 TEST_RULESET = {
-    "distance_sum":     dict(min_value=0, max_value=1000,   raw=False, bits=16),
-    "distance_remap":   dict(min_value=0, max_value=1,      raw=False, bits=10),
-    "plane_offset":     dict(min_value=0, max_value=1,      raw=False, bits=10),
-    "decal_thickness":  dict(min_value=0, max_value=4,      raw=False, bits=6),
-    "decal_length":     dict(min_value=0, max_value=32,     raw=False, bits=6),
-    "use_fg":           dict(min_value=0, max_value=1,      raw=True,  bits=1),
-    "fg_sectors":       dict(min_value=0, max_value=15,     raw=True,  bits=4),
-    "bg_sectors":       dict(min_value=0, max_value=15,     raw=True,  bits=4),
-    "sector_offset":    dict(min_value=0, max_value=127,    raw=True,  bits=5),
+    "distance_sum": dict(min_value=0, max_value=1000, raw=False, bits=16),
+    "distance_remap": dict(min_value=0, max_value=1, raw=False, bits=10),
+    "plane_offset": dict(min_value=0, max_value=1, raw=False, bits=10),
+    "decal_thickness": dict(min_value=0, max_value=4, raw=False, bits=6),
+    "decal_length": dict(min_value=0, max_value=32, raw=False, bits=6),
+    "use_FG_mask": dict(min_value=0, max_value=1, raw=True, bits=1),
+    "fg_sectors": dict(min_value=0, max_value=15, raw=True, bits=4),
+    "bg_sectors": dict(min_value=0, max_value=15, raw=True, bits=4),
+    "sector_offset": dict(min_value=0, max_value=127, raw=True, bits=5),
 
-    "normal_yaw":       dict(min_value=-(pi/2), max_value=(pi/2), raw=False, bits=16),
-    "normal_pitch":     dict(min_value=-(pi/2), max_value=(pi/2), raw=False, bits=16),
-    "bool_generic":     dict(min_value=0, max_value=1,      raw=True,  bits=1)
+    "normal_yaw": dict(min_value=-(pi / 2), max_value=(pi / 2), raw=False, bits=16),
+    "normal_pitch": dict(min_value=-(pi / 2), max_value=(pi / 2), raw=False, bits=16),
+    "bool_generic": dict(min_value=0, max_value=1, raw=True, bits=1)
 }
 
-
 GLOBAL_RULESET = {
-    "distance":         dict(type="float", min_value=0, max_value=1000,   raw=False, bits=32),
-    "remap":            dict(type="float", min_value=0, max_value=1,      raw=False, bits=16),
-    "offset":           dict(type="float", min_value=0, max_value=1,      raw=False, bits=16),
-    "decal_thickness":  dict(type="float", min_value=0, max_value=4,      raw=False, bits=12),
-    "use_fg":           dict(type="bool", min_value=0, max_value=1,      raw=True,  bits=1),
-    "fg_sectors":       dict(type="int", min_value=0, max_value=63,     raw=True,  bits=6),
-    "bg_sectors":       dict(type="int", min_value=0, max_value=63,     raw=True,  bits=6),
-    "sector_offset":    dict(type="int", min_value=0, max_value=127,    raw=True,  bits=7),
-    "panel_type":       dict(type="int", min_value=0, max_value=10,     raw=True,  bits=4),
+    # Special: calculated
+    "distance_sum": dict(type="float", min_value=0, max_value=1000, raw=False, bits=32),
+    "remap": dict(type="float", min_value=0, max_value=1, raw=False, bits=16),
 
-    # Vec3
-    "3D_pos.x":         dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
-    "3D_pos.y":         dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
-    "3D_pos.z":         dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
+    "plane_offset": dict(type="float", min_value=0, max_value=1, raw=False, bits=16),
+    "decal_thickness": dict(type="float", min_value=0, max_value=4, raw=False, bits=12),
+    "use_FG_mask": dict(type="bool", min_value=0, max_value=1, raw=True, bits=1),
+    "fg_sectors": dict(type="int", min_value=0, max_value=63, raw=True, bits=6),
+    "bg_sectors": dict(type="int", min_value=0, max_value=63, raw=True, bits=6),
+    "sector_offset": dict(type="int", min_value=0, max_value=127, raw=True, bits=7),
+    "panel_type": dict(type="int", min_value=0, max_value=10, raw=True, bits=4),
 
-    # Vec2 types (two values input)
-    "2D_pos.x":         dict(type="vec2", min_value=-128, max_value=128, raw=False, bits=32),
-    "2D_pos.y":         dict(type="vec2", min_value=-128, max_value=128, raw=False, bits=32),
+    # Special: Vec3 position
+    "3D_pos.x": dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
+    "3D_pos.y": dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
+    "3D_pos.z": dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
 
-    "normal_yaw":       dict(type="float", min_value=-(pi/2), max_value=(pi/2), raw=False, bits=24),
-    "normal_pitch":     dict(type="float", min_value=-(pi/2), max_value=(pi/2), raw=False, bits=24),
+    # Special: Vec2 position (two values input)
+    "2D_pos.x": dict(type="vec2", min_value=-128, max_value=128, raw=False, bits=32),
+    "2D_pos.y": dict(type="vec2", min_value=-128, max_value=128, raw=False, bits=32),
 
-    "tile_dir_yaw":     dict(type="float", min_value=-pi,     max_value=pi,       raw=False, bits=25),
-    "tile_dir_pitch":   dict(type="float", min_value=(-pi/2), max_value=(pi/2),   raw=False, bits=23),
+    # Special: directionless normal rotator
+    "normal_yaw": dict(type="float", min_value=-(pi / 2), max_value=(pi / 2), raw=False, bits=24),
+    "normal_pitch": dict(type="float", min_value=-(pi / 2), max_value=(pi / 2), raw=False, bits=24),
 
-    "divs":             dict(type="int", min_value=2, max_value=64,     raw=True,  bits=6),
-    "angle_offset":     dict(type="float", min_value=0, max_value=(pi/2), raw=False, bits=12),
-    "remap_angular":    dict(type="float", min_value=0, max_value=(pi/2), raw=False, bits=12),
+    # Special: direction vector rotator
+    "tile_dir_yaw": dict(type="float", min_value=-pi, max_value=pi, raw=False, bits=25),
+    "tile_dir_pitch": dict(type="float", min_value=(-pi / 2), max_value=(pi / 2), raw=False, bits=23),
 
-    "tile_dir_2d":      dict(type="float", min_value=0, max_value=1,      raw=False, bits=32),
-    "tile_dist":        dict(type="float", min_value=0, max_value=1000,   raw=False, bits=16),
-    "line_direction":   dict(type="float", min_value=0, max_value=1,      raw=False, bits=32),
+    "fan_divisions": dict(type="int", min_value=2, max_value=64, raw=True, bits=6),
+    "angle_offset": dict(type="float", min_value=0, max_value=(pi / 2), raw=False, bits=12),
+    "remap_angular": dict(type="float", min_value=0, max_value=(pi / 2), raw=False, bits=12),
+
+    "tile_direction_2d": dict(type="float", min_value=0, max_value=1, raw=False, bits=32),
+    "tile_distance": dict(type="float", min_value=0, max_value=1000, raw=False, bits=16),
+    "line_direction": dict(type="float", min_value=0, max_value=1, raw=False, bits=32),
 
     # Utility
-    "flip_block":     dict(type="bool", min_value=0, max_value=1,      raw=True,  bits=1)
+    "flip_block": dict(type="bool", min_value=0, max_value=1, raw=True, bits=1)
 }
 
 
@@ -148,6 +152,95 @@ class PanelLayer(bpy.types.PropertyGroup):
         default=0
     )
 
+    fan_divisions: bpy.props.IntProperty(
+        name="Fan Divisions",
+        min=2,
+        max=64,
+        update=auto_update,
+        default=0
+    )
+    angle_offset: bpy.props.FloatProperty(
+        name="Angle Offset",
+        min=0.0,
+        max=1.0,
+        update=auto_update,
+        default=0.0
+    )
+    remap_angular: bpy.props.FloatProperty(
+        name="Remap Angular",
+        min=0.0,
+        max=1.0,
+        update=auto_update,
+        default=0.0
+    )
+
+    position_2d: bpy.props.FloatVectorProperty(
+        name="2D Position",
+        subtype='XYZ',
+        min=-128000.0,
+        max=128000.0,
+        size=2,
+        update=auto_update,
+        default=[0.0, 1.0]
+    )
+    position_3d: bpy.props.FloatVectorProperty(
+        name="3D Position",
+        subtype='XYZ',
+        min=-128000.0,
+        max=128000.0,
+        update=auto_update,
+        default=[0.0, 0.0, 1.0]
+    )
+
+    tile_direction_2d: bpy.props.FloatProperty(
+        name="2D Tile Direction (Angle)",
+        min=0.0,
+        max=1.0,
+        update=auto_update,
+        default=0.0
+    )
+    tile_direction_3d: bpy.props.FloatVectorProperty(
+        name="3D Tile Direction",
+        subtype='XYZ',
+        min=-1.0,
+        max=1.0,
+        update=auto_update,
+        default=[0.0, 0.0, 1.0]
+    )
+    tile_distance: bpy.props.FloatProperty(
+        name="Tile Distance",
+        min=0.0,
+        max=1000.0,
+        update=auto_update,
+        default=0.0
+    )
+
+    line_direction: bpy.props.FloatProperty(
+        name="Line Direction (Angle)",
+        min=0.0,
+        max=1.0,
+        update=auto_update,
+        default=0.0
+    )
+
+    panel_type: bpy.props.EnumProperty(
+        name="Panel Type",
+        items=[
+            ('Fan', 'Fan Panel', ''),
+            ('UV Fan', 'UV Fan Panel', ''),
+            ('Normalized Fan', 'Normalized Fan Panel', ''),
+            ('UV Normalized Fan', 'UV Normalized Fan Panel', ''),
+            ('UV Lines', 'UV Lines Panel', ''),
+            ('UV Circles', 'UV Circles Panel', ''),
+            ('UV Circles Tiled', 'UV Circles Tiled Panel', ''),
+            ('Spherical', 'Spherical Panel', ''),
+            ('Spherical Tiled', 'Spherical Tiled Panel', ''),
+            ('Cylinder', 'Cylinder Panel', ''),
+        ],
+        update=auto_update,
+        default='UV Lines'
+    )
+
     # Internal usage
     use_layer: bpy.props.BoolProperty(
         name="Use This Layer",
@@ -155,6 +248,32 @@ class PanelLayer(bpy.types.PropertyGroup):
         update=auto_update,
         default=True
     )
+
+    # This dictionary defines which values are used for UI and packing
+    sets = {
+        'Fan': ["decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors", "sector_offset", "position_2d",
+                "plane_normal", "fan_divisions", "angle_offset", "remap_angular"],
+        'Normalized Fan': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask",
+                           "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "plane_normal",
+                           "fan_divisions", "angle_offset", "remap_angular"],
+        'UV Normalized Fan': ["remap", "decal_thickness", "use_FG_mask", "fg_sectors",
+                              "bg_sectors", "sector_offset", "position_2d", "fan_divisions", "angle_offset"],
+        'UV Lines': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask",
+                     "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "line_direction"],
+        'UV Circles': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask",
+                       "fg_sectors", "bg_sectors", "sector_offset", "position_2d"],
+        'UV Circles Tiled': ["distance_sum", "decal_thickness", "use_FG_mask",
+                             "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "tile_direction_2d",
+                             "tile_distance"],
+        'UV Fan': ["decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors", "sector_offset", "position_2d",
+                   "fan_divisions", "angle_offset", "remap_angular"],
+        'Spherical': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
+                      "sector_offset", "position_3d"],
+        'Spherical Tiled': ["distance_sum", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
+                            "sector_offset", "tile_direction_3d", "tile_distance", "position_3d"],
+        'Cylinder': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask",
+                     "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "plane_normal"],
+    }
 
     def __len__(self):
         return len(self.__annotations__) - 1
@@ -252,64 +371,39 @@ class PanelLayer(bpy.types.PropertyGroup):
         return [r_channel, g_channel, b_channel, a_channel]
 
     def get_pixel_alt(self) -> [float]:
-        yaw, pitch = get_rotator(self.plane_normal.normalized())
-        distance_sum = self.plane_dist_A + self.plane_dist_B
-        if distance_sum != 0:
-            distance_remap = self.plane_dist_B / distance_sum
-        else:
-            distance_remap = 0
-
-        # "Simply" define lists of values for encoding like before, but
-        # all the nasty stuff is hidden in bit_encoding.py and encoding
-        # relies on adjustable rule lists with ranges and depths per value
-        
-        # Placeholder for enum check
-        if True:
-            encode_rule_r = [
-                [yaw,   "normal_yaw"],
-                [pitch, "normal_pitch"]
-            ]
-            r_packed = encode_by_rule(encode_rule_r, TEST_RULESET)
-            r_channel, r_flip = as_float_denormalized(r_packed)
-            
-            encode_rule_g = [
-                [distance_sum, "distance_sum"],
-                [distance_remap, "distance_remap"],
-                [self.decal_length, "decal_length"]
-            ]
-            g_packed = encode_by_rule(encode_rule_r, TEST_RULESET)
-            g_channel, g_flip = as_float_denormalized(g_packed)
-            
-            encode_rule_b = [
-                [int(g_flip), "bool_generic"],
-                [int(r_flip), "bool_generic"],
-                [self.plane_offset,    "plane_offset"],
-                [self.decal_thickness, "decal_thickness"],
-                [self.fg_sectors, "fg_sectors"],
-                [self.bg_sectors, "bg_sectors"],
-                [self.sector_offset, "sector_offset"],
-                [0, "bool_generic"]
-            ]
-            b_packed = encode_by_rule(encode_rule_r, TEST_RULESET)
-            if check_mask(b_packed):
-                b_flip = True
-                b_packed ^= 1
-                b_channel = as_float_denormalized(b_packed)[0]
+        values = []
+        for val in self.sets[self.panel_type]:
+            if val == 'distance_sum' or val == 'remap':
+                distance_sum = self.plane_dist_A + self.plane_dist_B
+                if distance_sum != 0:
+                    distance_remap = self.plane_dist_B / distance_sum
+                else:
+                    distance_remap = 0
+                if val == distance_sum:
+                    values.append([distance_sum, "distance_sum"])
+                else:
+                    values.append([distance_remap, "remap"])
+            elif val == "position_3d":
+                values.append([self.position_3d.x, "3D_pos.x"])
+                values.append([self.position_3d.y, "3D_pos.y"])
+                values.append([self.position_3d.z, "3D_pos.z"])
+            elif val == "position_2d":
+                values.append([self.position_2d.x, "2D_pos.x"])
+                values.append([self.position_2d.y, "2D_pos.y"])
+            elif val == "plane_normal":
+                yaw, pitch = get_rotator(self.plane_normal.normalized())
+                values.append([yaw, "normal_yaw"])
+                values.append([pitch, "normal_pitch"])
+            elif val == "tile_direction_3d":
+                yaw, pitch = get_rotator(self.tile_direction_3d.normalized(), limit_range=False)
+                values.append([yaw, "tile_dir_yaw"])
+                values.append([pitch, "tile_dir_pitch"])
+            elif val == "use_FG_mask":
+                values.append([int(self.use_FG_mask), val])
             else:
-                b_flip = False
-                b_channel = as_float(b_packed)
-
-            a_channel = [int(self.use_FG_mask), 0]
-            a_packed = pack_manual(a_channel, [1, 1])
-
-            if check_mask(a_packed):
-                a_packed ^= 1
-                a_channel = as_float_denormalized(a_packed)[0]
-            else:
-                a_channel = as_float(a_packed)
-
-            return [r_channel, g_channel, b_channel, a_channel]
-
+                values.append([getattr(self, val), val])
+        values = encode_by_rule(values, GLOBAL_RULESET)
+        return ultra_generic_packer(values, True)
 
     def print_values(self):
         for item in list(self.__annotations__):
@@ -321,28 +415,27 @@ class PanelLayer(bpy.types.PropertyGroup):
         row = box.row()
         row.prop(self, "use_layer", text="Enable Layer")
 
-        row = box.row(align=True)
-        row.prop(self, "plane_normal")
-        if show_operators:
-            row.operator("panels.define_plane_normal", icon='ORIENTATION_NORMAL', text="Set", emboss=True)
+        row = box.row()
+        row.prop(self, "panel_type")
+        
+        i = 0
+        for prop in self.sets[self.panel_type]:
+            if i == 0:
+                row = box.row(align=True)
+            if i == 2:
+                i = 0
+                continue
 
-        row = box.row(align=True)
-        row.label(text="Plane Data")
-        row.prop(self, "plane_offset", text="Offset")
-        row.prop(self, "plane_dist_A", text="Dist A")
-        row.prop(self, "plane_dist_B", text="Dist B")
+            if prop != "distance_sum" and prop != "remap":
+                row.prop(self, prop)
+            else:
+                row.prop(self, "plane_dist_A")
+                row.prop(self, "plane_dist_B")
+                i += 2
+                continue
+            i += 1
 
-        row = box.row(align=True)
-        row.label(text="Decals")
-        row.prop(self, "decal_length", text="Length")
-        row.prop(self, "decal_thickness", text="Thickness")
-
-        row = box.row(align=True)
-        row.label(text="Sectors")
-        row.prop(self, "use_FG_mask", icon='FILE_PARENT', text="Use Previous")
-        row.prop(self, "sector_offset", text="Offset")
-        row.prop(self, "fg_sectors", text="FG")
-        row.prop(self, "bg_sectors", text="BG")
+        return
 
     def reset_to_default(self):
         targets = list(self.__annotations__)
@@ -435,7 +528,6 @@ class LayerPreset(bpy.types.PropertyGroup):
         if len(self.layers) > 0:
             current_layer = self.get_active()
             current_layer.draw_panel(layout, show_operators)
-
 
 
 class LayerManager(bpy.types.PropertyGroup):
@@ -560,7 +652,7 @@ class LayerManager(bpy.types.PropertyGroup):
                     box.row(align=True).label(text="256 presets exceeded!", icon='ERROR')
                 else:
                     box.row(align=True).label(text="Image size is too small", icon='ERROR')
-                
+
         if layout and not check_passed:
             box.row(align=True).operator("panels.adjust_image", text="Adjust", icon='MODIFIER_DATA')
 
@@ -610,7 +702,7 @@ class LayerManager(bpy.types.PropertyGroup):
         row.operator("panels.select_by_preset")
         op = row.operator("panels.select_by_face")
         op.call_edit = False
-        op = row.operator("panels.select_by_face",  text="E")
+        op = row.operator("panels.select_by_face", text="E")
         op.call_edit = True
         layout.row().prop(self, "use_auto_update", icon='FILE_REFRESH')
         layout.row().prop(self, "use_auto_offset", icon='MOD_LENGTH')
