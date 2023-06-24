@@ -1,9 +1,10 @@
 from math import asin, atan2, cos, sin, pi
 from mathutils import Vector
+
 verbose = 0
 
 
-def get_rotator(vec: Vector) -> [float]:
+def get_rotator(vec: Vector, limit_range=True) -> [float]:
     """Returns Yaw and Pitch rotation in radians. Negates input Vec with
     negative Z and returns rotation values that match a collinear vector
     to keep values inside [-Pi/2, Pi/2] range"""
@@ -11,7 +12,7 @@ def get_rotator(vec: Vector) -> [float]:
     if vec.length < 0.9999 or vec.length > 1.00001:
         print(f"[Vec to rot]Got non-normalized vector {vec.length}")
 
-    if vec.z < 0:
+    if limit_range and vec.z < 0:
         vec = vec.copy()
         vec.negate()
 

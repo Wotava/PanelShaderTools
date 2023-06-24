@@ -27,10 +27,9 @@ def pi_to_glsl_str(val: float) -> str:
 
 
 def map_float_to_int_range(value: float, range_min: float, range_max: float, bit_depth: int) -> int:
-    int_max = pow(2, bit_depth) - 1
-    dist_from_min = value - range_min
-    value_range = range_max - range_min
-    return int(dist_from_min / value_range * int_max)
+    range_min_2 = 0
+    range_max_2 = pow(2, bit_depth) - 1
+    return int(range_min_2 + (value - range_min) * (range_max_2 - range_min_2) / (range_max - range_min))
 
 
 def map_int_to_float_range(value: float, range_min: int, range_max: int, bit_depth: int) -> float:
@@ -162,8 +161,8 @@ def sublist_creator(values, splits):
 
 def bool_list_to_mask(b_list: []) -> int:
     i = 0
-    for val in b_list:
-        i = i << 1 | int(val)
+    for index, val in enumerate(b_list):
+        i = i | int(val) << (len(b_list) - 1 - index)
     return i
 
 
@@ -175,16 +174,48 @@ def ultra_generic_packer(values: [], validate=False) -> [int]:
     prepacked_channels = sublist_creator(values, 8)
     packed_channels = [0] * 8
 
-    # pack values
     for i, channel in enumerate(prepacked_channels):
-        packed = 0
-        bits_sum = 0
         for pair in channel:
             value, bit, name, rule = pair
             if name == 'flip_p1':
                 p1_target = i
             elif name == 'flip_p2':
                 p2_target = i
+
+    if p1_target == p2_target:
+        new_channel = []
+        tail = [[], []]
+        target_channel = prepacked_channels[p1_target]
+        for v in target_channel:
+            if v[2].find("flip") == -1:
+                new_channel.append(v)
+            else:
+                if v[2] == "flip_p1":
+                    tail[1] = v
+                else:
+                    tail[0] = v
+        new_channel.extend(tail)
+        prepacked_channels[p1_target] = new_channel
+    else:
+        t = [p1_target, p2_target]
+        for n in range(2):
+            new_channel = []
+            tail = []
+            target_channel = prepacked_channels[t[n]]
+            for v in target_channel:
+                if v[2].find("flip") == -1:
+                    new_channel.append(v)
+                else:
+                    tail = v
+            new_channel.append(tail)
+            prepacked_channels[t[n]] = new_channel
+
+    # pack values
+    for i, channel in enumerate(prepacked_channels):
+        packed = 0
+        bits_sum = 0
+        for pair in channel:
+            value, bit, name, rule = pair
             bits_sum += bit
             packed = packed << bit | value
         packed_channels[i] = packed
@@ -193,10 +224,19 @@ def ultra_generic_packer(values: [], validate=False) -> [int]:
     for i, flip in enumerate(flips):
         if flip:
             packed_channels[i] ^= (1 << 30)
+
     flip_p1 = flips[0:4]
     flip_p2 = flips[4:]
-    packed_channels[p1_target] = ((packed_channels[p1_target] >> 4) << 4) | bool_list_to_mask(flip_p1)
-    packed_channels[p2_target] = ((packed_channels[p2_target] >> 4) << 4) | bool_list_to_mask(flip_p2)
+    # reverse flips before writing, so we will unpack in r/g/b/a from the end
+    flip_p1.reverse()
+    flip_p2.reverse()
+    flips.reverse()
+
+    if p1_target != p2_target:
+        packed_channels[p1_target] = ((packed_channels[p1_target] >> 4) << 4) | bool_list_to_mask(flip_p1)
+        packed_channels[p2_target] = ((packed_channels[p2_target] >> 4) << 4) | bool_list_to_mask(flip_p2)
+    else:
+        packed_channels[p1_target] = ((packed_channels[p1_target] >> 8) << 8) | bool_list_to_mask(flips)
 
     # call validator
     if validate:
@@ -223,11 +263,16 @@ def validate_generic_pack(packed_values: [], original_values: [], print_code=Fal
             elif name == 'flip_p2':
                 p2_target = index
     flips = []
-    if not p1_target or not p2_target:
+    if (p1_target is None) or (p2_target is None):
         raise RuntimeError("Flip flags were not found!")
     targ = [p1_target, p2_target]
+
+    val = None
     for n in range(2):
-        val = packed_values[targ[n]]
+        if not val or cval != packed_values[targ[n]]:
+            val = packed_values[targ[n]]
+            cval = val
+
         flips_l = []
         for i in range(4):
             # get bitflag
@@ -238,8 +283,6 @@ def validate_generic_pack(packed_values: [], original_values: [], print_code=Fal
             code += ("bool " + flip_names[i]+str(n+1)) + " = " + channel_names[targ[n]] + " & 1; \n"
             code += channel_names[targ[n]] + " >>= 1; \n"
         code += "\n"
-
-        flips_l.reverse()
         flips.extend(flips_l)
 
     # add flip code to output
@@ -269,6 +312,7 @@ def validate_generic_pack(packed_values: [], original_values: [], print_code=Fal
                 print(f"{name} matches")
             else:
                 print(f"{name} doesn't match, {value} != {test_value}")
+                print(f"->In channel {index}, flip status {flips[index]}")
 
             # add code
             # check declaration
