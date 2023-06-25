@@ -139,7 +139,7 @@ def randomize_test():
         TEST_list[i][0] = new_val
 
 
-def sublist_creator(values, splits):
+def sublist_creator(values, splits, isolate=None):
     # Based on  https://stackoverflow.com/a/61649667
     # and       https://stackoverflow.com/a/613218
     bins = [[0] for _ in range(splits)]
@@ -156,7 +156,22 @@ def sublist_creator(values, splits):
         least.append(i)
         heapreplace(bins, least)
 
-    return [x[1:] for x in bins]
+    if isolate:
+        isolated_bins = []
+        free_space = []
+        for b_i, b in enumerate(bins):
+            isolated = False
+            for val in b[1:]:
+                if val[2] in isolate:
+                    isolated = True
+                    isolated_bins.append(b_i)
+                    break
+            if not isolated:
+                free_space.append([b_i, 32-b[0]])
+        return [x[1:] for x in bins], free_space
+
+    else:
+        return [x[1:] for x in bins], []
 
 
 def bool_list_to_mask(b_list: []) -> int:
@@ -166,49 +181,58 @@ def bool_list_to_mask(b_list: []) -> int:
     return i
 
 
-def ultra_generic_packer(values: [], validate=False) -> [int]:
+def ultra_generic_packer(values: [], validate=True, generate_code=False) -> [int]:
     # expected prepacked structure: [value, name, rule{type, min, max, raw, bits}]
     values = values.copy()
-    values.append([15, 4, "flip_p1", "bool"])
-    values.append([15, 4, "flip_p2", "bool"])
-    prepacked_channels = sublist_creator(values, 8)
-    packed_channels = [0] * 8
+    prepacked_channels, free_space = sublist_creator(values, 8, ["panel_type"])
 
     for i, channel in enumerate(prepacked_channels):
-        for pair in channel:
+        for pair_i, pair in enumerate(channel):
+            value, bit, name, rule = pair
+            if name == 'panel_type':
+                # Ensure that panel type flag is written last in r1 channel
+                if pair_i != (len(channel) - 1):
+                    temp = channel[-1]
+                    channel[-1] = channel[pair_i]
+                    channel[pair_i] = temp
+                if i != 0:
+                    temp = prepacked_channels[0]
+                    prepacked_channels[0] = prepacked_channels[i]
+                    prepacked_channels[i] = temp
+                break
+
+    # try to pack both flips in one place
+    packed_flips = False
+    flip_pack = [[15, 4, "flip_p1", "bool"], [15, 4, "flip_p2", "bool"]]
+    for s in free_space:
+        if s[1] >= 8:
+            packed_flips = True
+            prepacked_channels[s[0]].append(flip_pack.pop())
+            prepacked_channels[s[0]].append(flip_pack.pop())
+            break
+    if not packed_flips:
+        for s in free_space:
+            if len(flip_pack) == 0:
+                break
+            if s[1] >= 4:
+                values.append(flip_pack.pop())
+
+        if len(flip_pack) > 0:
+            raise RuntimeError(f"Failed to pack flips")
+
+    p1_target, p2_target = None, None
+    for i, channel in enumerate(prepacked_channels):
+        for pair_i, pair in enumerate(channel):
             value, bit, name, rule = pair
             if name == 'flip_p1':
                 p1_target = i
             elif name == 'flip_p2':
                 p2_target = i
 
-    if p1_target == p2_target:
-        new_channel = []
-        tail = [[], []]
-        target_channel = prepacked_channels[p1_target]
-        for v in target_channel:
-            if v[2].find("flip") == -1:
-                new_channel.append(v)
-            else:
-                if v[2] == "flip_p1":
-                    tail[1] = v
-                else:
-                    tail[0] = v
-        new_channel.extend(tail)
-        prepacked_channels[p1_target] = new_channel
-    else:
-        t = [p1_target, p2_target]
-        for n in range(2):
-            new_channel = []
-            tail = []
-            target_channel = prepacked_channels[t[n]]
-            for v in target_channel:
-                if v[2].find("flip") == -1:
-                    new_channel.append(v)
-                else:
-                    tail = v
-            new_channel.append(tail)
-            prepacked_channels[t[n]] = new_channel
+    packed_channels = [0] * 8
+
+    if p1_target is None or p2_target is None:
+        raise RuntimeError(f"No flip flags. Flip1: {p1_target}, Flip2: {p2_target}")
 
     # pack values
     for i, channel in enumerate(prepacked_channels):
@@ -239,19 +263,32 @@ def ultra_generic_packer(values: [], validate=False) -> [int]:
         packed_channels[p1_target] = ((packed_channels[p1_target] >> 8) << 8) | bool_list_to_mask(flips)
 
     # call validator
-    if validate:
-        validate_generic_pack(packed_channels, prepacked_channels)
+    if validate or generate_code:
+        validate_generic_pack(packed_channels, prepacked_channels, generate_code)
     return packed_channels
 
 
-def validate_generic_pack(packed_values: [], original_values: [], print_code=False) -> str:
+def validate_generic_pack(packed_values: [], original_values: [], generate_code=False) -> str:
+    """
+    Raises exception if any packed value doesn't match the original value after decoding.
+    This function expects a list of lists with original values in format as follows::
+        [value, name, {type, range_min, range_max, keep_raw, bit_length}]
+    If ``print_code`` is ``True``, will print formatted GLSL code for value decoding to current output:
+        - Blender Python console, if called from it;
+        - OS terminal otherwise, but Blender needs to be started from there.
+    :param packed_values: List of floats with encoded int values in them
+    :param original_values: List of original values before encoding
+    :param generate_code: Enables GLSL code generation for value decoding
+    :return: Empty string or string of formatted GLSL code
+    """
     channel_names = ['color1.x', 'color1.y', 'color1.z', 'color1a', 'color2.x', 'color2.y', 'color2.z', 'color2a']
     flip_names = ['flip_r', 'flip_g', 'flip_b', 'flip_a']
     declared_variables = []
     code = "//GENERATED CODE START \n"
 
-    for channel in channel_names:
-        code += f"{channel} = floatBitsToUint({channel});\n"
+    if generate_code:
+        for channel in channel_names:
+            code += f"{channel} = floatBitsToUint({channel});\n"
 
     # unpack flip-flags (works)
     p1_target, p2_target = None, None
@@ -262,6 +299,9 @@ def validate_generic_pack(packed_values: [], original_values: [], print_code=Fal
                 p1_target = index
             elif name == 'flip_p2':
                 p2_target = index
+            elif name == 'panel_type':
+                if index != 0:
+                    raise RuntimeError("Panel type was displaced!")
     flips = []
     if (p1_target is None) or (p2_target is None):
         raise RuntimeError("Flip flags were not found!")
@@ -280,18 +320,20 @@ def validate_generic_pack(packed_values: [], original_values: [], print_code=Fal
             val >>= 1
 
             # write the rule to the code
-            code += ("bool " + flip_names[i]+str(n+1)) + " = " + channel_names[targ[n]] + " & 1; \n"
-            code += channel_names[targ[n]] + " >>= 1; \n"
+            if generate_code:
+                code += ("bool " + flip_names[i]+str(n+1)) + " = " + channel_names[targ[n]] + " & 1; \n"
+                code += channel_names[targ[n]] + " >>= 1; \n"
         code += "\n"
         flips.extend(flips_l)
 
     # add flip code to output
-    for n in range(2):
-        for i in range(4):
-            code += f"if ({flip_names[i]+str(n+1)})" + " { \n"
-            code += f"    {channel_names[i + (4*n)]} ^= (1 << 30); \n"
-            code += "} \n"
-    code += "\n"
+    if generate_code:
+        for n in range(2):
+            for i in range(4):
+                code += f"if ({flip_names[i]+str(n+1)})" + " { \n"
+                code += f"    {channel_names[i + (4*n)]} ^= (1 << 30); \n"
+                code += "} \n"
+        code += "\n"
 
     for index, flip in enumerate(flips):
         if flip:
@@ -308,58 +350,59 @@ def validate_generic_pack(packed_values: [], original_values: [], print_code=Fal
 
             var_type = rule["type"]
             test_value = packed_channel & (2**bit - 1)
-            if test_value == value:
-                print(f"{name} matches")
-            else:
-                print(f"{name} doesn't match, {value} != {test_value}")
-                print(f"->In channel {index}, flip status {flips[index]}")
+            if test_value != value:
+                raise RuntimeError(f"{name} doesn't match, {value} != {test_value} at channel {index} "
+                                   f"flip: {flips[index]}")
 
-            # add code
-            # check declaration
-            if name[-2] == ".":
-                if name[:-2] not in declared_variables:
-                    code += f"{var_type} {name[:-2]}; \n"
-                    declared_variables.append(name[:-2])
-                code += f"{name} = "
-            else:
-                if name not in declared_variables:
-                    declared_variables.append(name)
-                code += f"{var_type} {name} = "
-            converted_value = f"{channel_names[index]} & (pow(2, {bit}) - 1)"
-
-            if not rule["raw"]:
-                mapped_value = f"map({converted_value}, 0, (pow(2, {bit}) - 1), "
-                pi_test = [pi, pi/2]
-                if abs(rule['min_value']) not in pi_test and abs(rule['max_value']) not in pi_test:
-                    mapped_value += f"{rule['min_value']}.0, {rule['max_value']}.0)"
+                # add code
+                # check declaration
+            if generate_code:
+                if name[-2] == ".":
+                    if name[:-2] not in declared_variables:
+                        code += f"{var_type} {name[:-2]}; \n"
+                        declared_variables.append(name[:-2])
+                    code += f"{name} = "
                 else:
-                    if abs(rule['min_value']) in pi_test:
-                        mapped_value += f"{pi_to_glsl_str(rule['min_value'])}, "
+                    if name not in declared_variables:
+                        declared_variables.append(name)
+                    code += f"{var_type} {name} = "
+                converted_value = f"{channel_names[index]} & (pow(2, {bit}) - 1)"
+
+                if not rule["raw"]:
+                    mapped_value = f"map({converted_value}, 0, (pow(2, {bit}) - 1), "
+                    pi_test = [pi, pi/2]
+                    if abs(rule['min_value']) not in pi_test and abs(rule['max_value']) not in pi_test:
+                        mapped_value += f"{rule['min_value']}.0, {rule['max_value']}.0)"
                     else:
-                        mapped_value += f"{rule['min_value']}, "
+                        if abs(rule['min_value']) in pi_test:
+                            mapped_value += f"{pi_to_glsl_str(rule['min_value'])}, "
+                        else:
+                            mapped_value += f"{rule['min_value']}, "
 
-                    if abs(rule['max_value']) in pi_test:
-                        mapped_value += f"{pi_to_glsl_str(rule['max_value'])})"
-                    else:
-                        mapped_value += f"{rule['max_value']})"
-            else:
-                mapped_value = converted_value
+                        if abs(rule['max_value']) in pi_test:
+                            mapped_value += f"{pi_to_glsl_str(rule['max_value'])})"
+                        else:
+                            mapped_value += f"{rule['max_value']})"
+                else:
+                    mapped_value = converted_value
 
-            if rule['type'] in ['bool', 'int']:
-                mapped_value = f"{rule['type']}({mapped_value}); \n"
-            else:
-                mapped_value += "; \n"
-            code += mapped_value
+                if rule['type'] in ['bool', 'int']:
+                    mapped_value = f"{rule['type']}({mapped_value}); \n"
+                else:
+                    mapped_value += "; \n"
+                code += mapped_value
 
-            code += f"{channel_names[index]} >>= {bit}; \n"
-            code += "\n"
+                code += f"{channel_names[index]} >>= {bit}; \n"
+                code += "\n"
 
             packed_channel >>= bit
 
-    code += "//GENERATED CODE END \n"
-    if print_code:
+    if generate_code:
+        code += "//GENERATED CODE END \n"
         print(code)
-    return code
+        return code
+    else:
+        return ""
 
 
 def pack_manual(target: [int], bits_per_val: [int]) -> int:

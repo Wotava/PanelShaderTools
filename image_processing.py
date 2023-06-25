@@ -10,6 +10,7 @@ from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_floa
 from .utils import get_rotator
 
 MAX_LAYERS = 8
+PIXELS_PER_LAYER = 2
 verbose = 0
 
 
@@ -18,22 +19,6 @@ def auto_update(self, context) -> None:
         manager: LayerManager = context.scene.panel_manager
         manager.write_preset(manager.active_preset)
 
-
-TEST_RULESET = {
-    "distance_sum": dict(min_value=0, max_value=1000, raw=False, bits=16),
-    "distance_remap": dict(min_value=0, max_value=1, raw=False, bits=10),
-    "plane_offset": dict(min_value=0, max_value=1, raw=False, bits=10),
-    "decal_thickness": dict(min_value=0, max_value=4, raw=False, bits=6),
-    "decal_length": dict(min_value=0, max_value=32, raw=False, bits=6),
-    "use_FG_mask": dict(min_value=0, max_value=1, raw=True, bits=1),
-    "fg_sectors": dict(min_value=0, max_value=15, raw=True, bits=4),
-    "bg_sectors": dict(min_value=0, max_value=15, raw=True, bits=4),
-    "sector_offset": dict(min_value=0, max_value=127, raw=True, bits=5),
-
-    "normal_yaw": dict(min_value=-(pi / 2), max_value=(pi / 2), raw=False, bits=16),
-    "normal_pitch": dict(min_value=-(pi / 2), max_value=(pi / 2), raw=False, bits=16),
-    "bool_generic": dict(min_value=0, max_value=1, raw=True, bits=1)
-}
 
 GLOBAL_RULESET = {
     # Special: calculated
@@ -226,6 +211,7 @@ class PanelLayer(bpy.types.PropertyGroup):
     panel_type: bpy.props.EnumProperty(
         name="Panel Type",
         items=[
+            ('Planar', 'Planar Panel', ''),
             ('Fan', 'Fan Panel', ''),
             ('UV Fan', 'UV Fan Panel', ''),
             ('Normalized Fan', 'Normalized Fan Panel', ''),
@@ -251,28 +237,31 @@ class PanelLayer(bpy.types.PropertyGroup):
 
     # This dictionary defines which values are used for UI and packing
     sets = {
+        'Planar': ["plane_normal", "distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors",
+                   "bg_sectors", "sector_offset", "panel_type"],
         'Fan': ["decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors", "sector_offset", "position_2d",
-                "plane_normal", "fan_divisions", "angle_offset", "remap_angular"],
+                "plane_normal", "fan_divisions", "angle_offset", "remap_angular", "panel_type"],
         'Normalized Fan': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask",
                            "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "plane_normal",
-                           "fan_divisions", "angle_offset", "remap_angular"],
+                           "fan_divisions", "angle_offset", "remap_angular", "panel_type"],
         'UV Normalized Fan': ["remap", "decal_thickness", "use_FG_mask", "fg_sectors",
-                              "bg_sectors", "sector_offset", "position_2d", "fan_divisions", "angle_offset"],
-        'UV Lines': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask",
-                     "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "line_direction"],
-        'UV Circles': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask",
-                       "fg_sectors", "bg_sectors", "sector_offset", "position_2d"],
+                              "bg_sectors", "sector_offset", "position_2d", "fan_divisions", "angle_offset",
+                              "panel_type"],
+        'UV Lines': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
+                     "sector_offset", "position_2d", "line_direction", "panel_type"],
+        'UV Circles': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
+                       "sector_offset", "position_2d", "panel_type"],
         'UV Circles Tiled': ["distance_sum", "decal_thickness", "use_FG_mask",
                              "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "tile_direction_2d",
-                             "tile_distance"],
+                             "tile_distance", "panel_type"],
         'UV Fan': ["decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors", "sector_offset", "position_2d",
-                   "fan_divisions", "angle_offset", "remap_angular"],
+                   "fan_divisions", "angle_offset", "remap_angular", "panel_type"],
         'Spherical': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
-                      "sector_offset", "position_3d"],
+                      "sector_offset", "position_3d", "panel_type"],
         'Spherical Tiled': ["distance_sum", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
-                            "sector_offset", "tile_direction_3d", "tile_distance", "position_3d"],
+                            "sector_offset", "tile_direction_3d", "tile_distance", "position_3d", "panel_type"],
         'Cylinder': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask",
-                     "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "plane_normal"],
+                     "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "plane_normal", "panel_type"],
     }
 
     def __len__(self):
@@ -305,72 +294,9 @@ class PanelLayer(bpy.types.PropertyGroup):
             i += 1
         self.name = target.name + " copy"
 
-    def get_pixel(self) -> [float]:
-        """Returns RGBA pixel with encoded values"""
-        # Prepare normal vector as a Yaw-Pitch rotator with signed ints
-        # Encoded as follows:
-        # 1 bit Yaw-sign, 15 bit Yaw rotation in radians in range [-Pi/2, Pi/2]
-        # 1 bit Pitch-sign, 15 bit Pitch rotation in radians in range [-Pi/2, Pi/2]
-        yaw, pitch = get_rotator(self.plane_normal.normalized())
-        r_channel = [yaw < 0, map_float_to_int_range(abs(yaw), 0, pi / 2, 15),
-                     pitch < 0, map_float_to_int_range(abs(pitch), 0, pi / 2, 15)]
-        r_packed = pack_manual(r_channel, [1, 15, 1, 15])
-        r_channel, r_flip = as_float_denormalized(r_packed)
-        if verbose > 2:
-            print(f"rch bits {bin(r_packed)} ({len(bin(r_packed)) - 2} bit)")
-
-        distance_sum = self.plane_dist_A + self.plane_dist_B
-        if distance_sum != 0:
-            distance_remap = self.plane_dist_B / distance_sum
-        else:
-            distance_remap = 0
-        g_channel = [map_float_to_int_range(distance_sum, 0, 100, 16),
-                     map_float_to_int_range(distance_remap, 0, 1, 10),
-                     map_float_to_int_range(self.decal_length, 0, 32, 6)]
-
-        g_packed = pack_manual(g_channel, [16, 10, 6])
-        if verbose > 2:
-            print(f"gch bits {bin(g_packed)} ({len(bin(g_packed)) - 2} bit)")
-        g_channel, g_flip = as_float_denormalized(g_packed)
-
-        b_channel = [int(g_flip), int(r_flip),
-                     map_float_to_int_range(self.plane_offset, 0, 1, 10),
-                     map_float_to_int_range(self.decal_thickness, 0, 4, 6),
-                     self.fg_sectors, self.bg_sectors, self.sector_offset, 0]
-
-        # Test if this value has non-zero (000000) exponent before packing
-        # and write a flip-bit, otherwise blender will simply round it all
-        # down to zero when reading texture
-        b_packed = pack_manual(b_channel, [1, 1, 10, 6, 4, 4, 5, 1])
-        if check_mask(b_packed):
-            b_flip = True
-            b_packed ^= 1
-            b_channel = as_float_denormalized(b_packed)[0]
-        else:
-            b_flip = False
-            b_channel = as_float(b_packed)
-
-        if verbose > 2:
-            print(f"bch bits {bin(b_packed)} ({len(bin(b_packed)) - 2} bit)")
-
-        a_channel = [int(self.use_FG_mask), 0]
-        a_packed = pack_manual(a_channel, [1, 1])
-
-        if check_mask(a_packed):
-            a_packed ^= 1
-            a_channel = as_float_denormalized(a_packed)[0]
-        else:
-            a_channel = as_float(a_packed)
-
-        if verbose > 2:
-            print(f"ach bits {bin(a_packed)} ({len(bin(a_packed)) - 2} bit)")
-
-        if verbose > 1:
-            print(f"flips r{r_flip} g{g_flip} b{b_flip}")
-            print(f"writing {r_channel}, {g_channel}, {b_channel}, {a_channel}")
-        return [r_channel, g_channel, b_channel, a_channel]
-
-    def get_pixel_alt(self) -> [float]:
+    def get_values(self) -> []:
+        """Returns a list of layer values matching current panel type paired with their names
+         in format [value, value_name]"""
         values = []
         for val in self.sets[self.panel_type]:
             if val == 'distance_sum' or val == 'remap':
@@ -400,10 +326,31 @@ class PanelLayer(bpy.types.PropertyGroup):
                 values.append([pitch, "tile_dir_pitch"])
             elif val == "use_FG_mask":
                 values.append([int(self.use_FG_mask), val])
+            elif val == "panel_type":
+                values.append([list(self.sets.keys()).index(self.panel_type), val])
             else:
                 values.append([getattr(self, val), val])
+        return values
+
+    def get_pixel(self) -> [float]:
+        """Returns a list of floats with encoded layer parameters. Encoding rules are taken from GLOBAL_RULESET
+         global variable"""
+        values = self.get_values()
         values = encode_by_rule(values, GLOBAL_RULESET)
-        return ultra_generic_packer(values, True)
+        return ultra_generic_packer(values, validate=True)
+
+    def print_conversion_code(self) -> None:
+        """Prints generated GLSL float decoding code for current panel preset. Pretty much the same as get_pixel(), but
+         passes generate_code=True to the generic packer. A bit hacky approach for now"""
+        init_panel_type = self.panel_type
+
+        for p_type in self.sets:
+            self.panel_type = p_type
+            print(f"\n// GENERATED CODE FOR PANEl TYPE {p_type}")
+            values = encode_by_rule(self.get_values(), GLOBAL_RULESET)
+            ultra_generic_packer(values, generate_code=True)
+
+        self.panel_type = init_panel_type
 
     def print_values(self):
         for item in list(self.__annotations__):
@@ -417,24 +364,23 @@ class PanelLayer(bpy.types.PropertyGroup):
 
         row = box.row()
         row.prop(self, "panel_type")
-        
+
         i = 0
         for prop in self.sets[self.panel_type]:
-            if i == 0:
+            if i == 0 or i >= 2:
                 row = box.row(align=True)
-            if i == 2:
                 i = 0
-                continue
 
-            if prop != "distance_sum" and prop != "remap":
-                row.prop(self, prop)
-            else:
+            if prop == 'panel_type':
+                continue
+            if prop == "distance_sum" or prop == "remap":
                 row.prop(self, "plane_dist_A")
                 row.prop(self, "plane_dist_B")
                 i += 2
                 continue
-            i += 1
-
+            else:
+                row.prop(self, prop)
+                i += 1
         return
 
     def reset_to_default(self):
@@ -480,9 +426,10 @@ class LayerPreset(bpy.types.PropertyGroup):
             self.layers.remove(self.active_layer)
 
     def get_pixel_strip(self) -> [float]:
-        # TODO adjust
+        """Returns a list of floats to compose a pixel from. List is filled with empty values until it matches the
+         target length for a preset specified by MAX_LAYERS and PIXELS_PER_LAYER global variables."""
         pixels = []
-        target_length = 32
+        target_length = MAX_LAYERS * PIXELS_PER_LAYER * 4
         for layer in self.layers:
             if layer.use_layer:
                 pixels.extend(layer.get_pixel())

@@ -14,8 +14,8 @@ def update_objects(targets):
 
 class DebugOperator(bpy.types.Operator):
     """Debug operator"""
-    bl_idname = "material.debug_panel_shader"
-    bl_label = "Scale Oversize UVs"
+    bl_idname = "panels.debug"
+    bl_label = "Debug"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -23,6 +23,7 @@ class DebugOperator(bpy.types.Operator):
         return context.view.show_developer_ui
 
     def execute(self, context):
+        context.scene.panel_manager.scene_presets[0].layers[0].print_conversion_code()
         return {'FINISHED'}
 
 
