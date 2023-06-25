@@ -49,8 +49,9 @@ def replace_std_functions(line: str) -> str:
 
 
 def strip_float_markers(line: str) -> str:
-    for i in range(10):
-        line = line.replace(f"{i}.f", str(i))
+    for num in range(10):
+        line = line.replace(f"{num}.f", str(num))
+        line = line.replace(f"{num}f", str(num))
     return line
 
 
@@ -168,4 +169,4 @@ with open(sys.argv[1], 'r') as my_file:
         sub_line = replace_std_functions(sub_line)
         sub_line = strip_float_markers(sub_line)
         sub_line = replace_lwc_functions(sub_line)
-        print(sub_line)
+        print(sub_line, end='')
