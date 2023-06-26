@@ -305,8 +305,10 @@ class PanelLayer(bpy.types.PropertyGroup):
                     distance_remap = self.plane_dist_B / distance_sum
                 else:
                     distance_remap = 0
-                if val == distance_sum:
+
+                if val == "distance_sum":
                     values.append([distance_sum, "distance_sum"])
+                    values.append([distance_remap, "remap"])
                 else:
                     values.append([distance_remap, "remap"])
             elif val == "position_3d":
