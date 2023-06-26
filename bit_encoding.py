@@ -4,6 +4,30 @@ from heapq import heapreplace
 import random
 verbose = 0
 
+GLSL_ALIASES = {
+    # Special: calculated
+    "distance_sum": "InDistance",
+    "remap": "InRemap",
+    "plane_offset": "InOffset",
+    "decal_thickness": "InDecalThickness",
+    "use_FG_mask": "InUsePrevFGMask",
+    "fg_sectors": "InFGSectors",
+    "bg_sectors": "InBGSectors",
+    "sector_offset": "InSectorOffset",
+    "panel_type": "InPanelType",
+
+    # Special: directionless normal rotator
+    "plane_normal": "InPlaneNormal",
+
+    "fan_divisions": "InDivs",
+    "angle_offset": "InAngleOffset",
+    "remap_angular": "InRemap",
+
+    "tile_direction_2d": "InTileDir",
+    "tile_distance": "InTileDist",
+    "line_direction": "InTileDir",
+}
+
 
 def clamp(val, bottom_limit, top_limit):
     return max(bottom_limit, min(val, top_limit))
@@ -112,34 +136,7 @@ def encode_by_rule(values: [], target_ruleset: []) -> [int]:
     return res
 
 
-TEST_list = [
-    [234, "distance"],
-    [0.54, "remap"],
-    [0.645, "offset"],
-    [2.2, "decal_thickness"],
-    [-123.3, "2D_pos.x"],
-    [45.0, "2D_pos.y"],
-    [pi/4, "normal_yaw"],
-    [-pi/7, "normal_pitch"],
-    [43, "divs"],
-    [0.54, "angle_offset"],
-    [0.43, "remap_angular"],
-    [1,  "use_fg"],
-    [20, "fg_sectors"],
-    [12, "bg_sectors"],
-    [5, "sector_offset"],
-    [1, "panel_type"],
-]
-
-
-def randomize_test():
-    for i, val in enumerate(TEST_list):
-        ceil = (2**val[1]) - 1
-        new_val = int(random.random() * ceil)
-        TEST_list[i][0] = new_val
-
-
-def sublist_creator(values, splits, isolate=None):
+def sublist_creator(values, splits):
     # Based on  https://stackoverflow.com/a/61649667
     # and       https://stackoverflow.com/a/613218
     bins = [[0] for _ in range(splits)]
@@ -156,22 +153,7 @@ def sublist_creator(values, splits, isolate=None):
         least.append(i)
         heapreplace(bins, least)
 
-    if isolate:
-        isolated_bins = []
-        free_space = []
-        for b_i, b in enumerate(bins):
-            isolated = False
-            for val in b[1:]:
-                if val[2] in isolate:
-                    isolated = True
-                    isolated_bins.append(b_i)
-                    break
-            if not isolated:
-                free_space.append([b_i, 32-b[0]])
-        return [x[1:] for x in bins], free_space
-
-    else:
-        return [x[1:] for x in bins], []
+    return [x[1:] for x in bins]
 
 
 def bool_list_to_mask(b_list: []) -> int:
@@ -181,11 +163,29 @@ def bool_list_to_mask(b_list: []) -> int:
     return i
 
 
+def embed_bits(target: int, offset: int, value: int, val_len=0) -> int:
+    if not val_len:
+        val_len = len(bin(value)) - 2
+    tail = target & ((2 ** offset) - 1)
+
+    zero_mask = (2 ** 32) - 1
+    zero_mask >>= val_len + offset
+    zero_mask <<= val_len + offset
+    zero_mask |= (2 ** offset) - 1
+
+    target &= zero_mask
+    target |= tail
+    target |= (value << offset)
+    return target
+
+
 def ultra_generic_packer(values: [], validate=True, generate_code=False) -> [int]:
     # expected prepacked structure: [value, name, rule{type, min, max, raw, bits}]
     values = values.copy()
-    prepacked_channels, free_space = sublist_creator(values, 8, ["panel_type"])
+    prepacked_channels = sublist_creator(values, 8)
 
+    # Move panel_type to the end of R1 channel.
+    # We do this always to make panel type decoding consistent across types
     for i, channel in enumerate(prepacked_channels):
         for pair_i, pair in enumerate(channel):
             value, bit, name, rule = pair
@@ -201,40 +201,54 @@ def ultra_generic_packer(values: [], validate=True, generate_code=False) -> [int
                     prepacked_channels[i] = temp
                 break
 
-    # try to pack both flips in one place
-    packed_flips = False
+    # Calculate free space left in all channels
+    free_space = []
+    for i, channel in enumerate(prepacked_channels):
+        free_space.append([i, 32 - sum([v[1] for v in channel])])
+
+    # Try to pack all flips in one place that is not occupied with panel_type, because we usually
+    # expect flips to be decoded first.
     flip_pack = [[15, 4, "flip_p1", "bool"], [15, 4, "flip_p2", "bool"]]
-    for s in free_space:
+    flip_locations = []
+    for s in free_space[1:]:
         if s[1] >= 8:
-            packed_flips = True
             prepacked_channels[s[0]].append(flip_pack.pop())
             prepacked_channels[s[0]].append(flip_pack.pop())
+            flip_locations.append(s[0])
             break
-    if not packed_flips:
-        for s in free_space:
+
+    # If we failed to pack all flips in one place, try to pack them separately
+    if len(flip_pack) > 0:
+        for s in free_space[1:]:
             if len(flip_pack) == 0:
                 break
             if s[1] >= 4:
-                values.append(flip_pack.pop())
+                prepacked_channels[s[0]].append(flip_pack.pop())
+                flip_locations.append(s[0])
 
-        if len(flip_pack) > 0:
-            raise RuntimeError(f"Failed to pack flips")
+    # If we still failed to pack them, try to pack them in the R1 channel by inserting flips before panel_type
+    if len(flip_pack) > 0:
+        if (32 - sum(v[1] for v in prepacked_channels[0])) >= 4 * len(flip_pack):
+            while len(flip_pack) > 0:
+                prepacked_channels[0].insert(-1, flip_pack.pop())
+            flip_locations.append(0)
 
-    p1_target, p2_target = None, None
-    for i, channel in enumerate(prepacked_channels):
-        for pair_i, pair in enumerate(channel):
-            value, bit, name, rule = pair
-            if name == 'flip_p1':
-                p1_target = i
-            elif name == 'flip_p2':
-                p2_target = i
+    # Give up completely:
+    if len(flip_pack) > 0:
+        raise RuntimeError(f"Failed to pack flips, not all flips added")
+    elif len(flip_locations) == 0:
+        raise RuntimeError(f"Failed to pack flips, no locations written")
 
-    packed_channels = [0] * 8
+    if len(flip_locations) == 1:
+        p1_target, p2_target = flip_locations[0], flip_locations[0]
+    else:
+        p1_target, p2_target = flip_locations[0], flip_locations[1]
 
     if p1_target is None or p2_target is None:
         raise RuntimeError(f"No flip flags. Flip1: {p1_target}, Flip2: {p2_target}")
 
-    # pack values
+    # Pack each channel
+    packed_channels = [0] * 8
     for i, channel in enumerate(prepacked_channels):
         packed = 0
         bits_sum = 0
@@ -244,6 +258,7 @@ def ultra_generic_packer(values: [], validate=True, generate_code=False) -> [int
             packed = packed << bit | value
         packed_channels[i] = packed
 
+    # Check if any packed value needs to have 31st bit flipped
     flips = [check_mask(val) for val in packed_channels]
     for i, flip in enumerate(flips):
         if flip:
@@ -251,24 +266,39 @@ def ultra_generic_packer(values: [], validate=True, generate_code=False) -> [int
 
     flip_p1 = flips[0:4]
     flip_p2 = flips[4:]
-    # reverse flips before writing, so we will unpack in r/g/b/a from the end
+    # Reverse flips before writing, so we will unpack in r/g/b/a from the end
     flip_p1.reverse()
     flip_p2.reverse()
     flips.reverse()
 
+    # Currently flip flags can only be either at the end of packed value
+    # or inserted before panel_type in R1 channel
     if p1_target != p2_target:
-        packed_channels[p1_target] = ((packed_channels[p1_target] >> 4) << 4) | bool_list_to_mask(flip_p1)
-        packed_channels[p2_target] = ((packed_channels[p2_target] >> 4) << 4) | bool_list_to_mask(flip_p2)
+        targets = [p1_target, p2_target]
+        flip_packs = [flip_p1, flip_p2]
+        for i, target in enumerate(targets):
+            # If this flip pack isn't placed at R1 channel (target == 0), then it's always 4 last bits
+            if target != 0:
+                packed_channels[target] = embed_bits(packed_channels[target], 0, bool_list_to_mask(flip_packs[i]), 4)
+            # else it's always 4 bits with 4 bits offset
+            else:
+                packed_channels[target] = embed_bits(packed_channels[target], 4, bool_list_to_mask(flip_packs[i]), 4)
     else:
-        packed_channels[p1_target] = ((packed_channels[p1_target] >> 8) << 8) | bool_list_to_mask(flips)
+        # If not at R1 channel, always last 8 bits
+        if p1_target != 0:
+            packed_channels[p1_target] = embed_bits(packed_channels[p1_target], 0, bool_list_to_mask(flips), 8)
+        # Else always 8 bits with 4 bits offset from the end
+        else:
+            packed_channels[0] = embed_bits(packed_channels[0], 4, bool_list_to_mask(flips), 8)
 
     # call validator
     if validate or generate_code:
-        validate_generic_pack(packed_channels, prepacked_channels, generate_code)
+        flips.reverse()
+        validate_generic_pack(packed_channels, prepacked_channels, flips, [p1_target, p2_target], generate_code)
     return packed_channels
 
 
-def validate_generic_pack(packed_values: [], original_values: [], generate_code=False) -> str:
+def validate_generic_pack(packed_values: [], original_values: [], flip_check: [], flip_pos: [], generate_code=False) -> str:
     """
     Raises exception if any packed value doesn't match the original value after decoding.
     This function expects a list of lists with original values in format as follows::
@@ -276,13 +306,15 @@ def validate_generic_pack(packed_values: [], original_values: [], generate_code=
     If ``print_code`` is ``True``, will print formatted GLSL code for value decoding to current output:
         - Blender Python console, if called from it;
         - OS terminal otherwise, but Blender needs to be started from there.
+    :param flip_check: List of flip values to check against
+    :param flip_pos: List of flip bits locations
     :param packed_values: List of floats with encoded int values in them
     :param original_values: List of original values before encoding
     :param generate_code: Enables GLSL code generation for value decoding
     :return: Empty string or string of formatted GLSL code
     """
-    channel_names = ['color1.x', 'color1.y', 'color1.z', 'color1a', 'color2.x', 'color2.y', 'color2.z', 'color2a']
-    flip_names = ['flip_r', 'flip_g', 'flip_b', 'flip_a']
+    channel_names = ['r1_int', 'g1_int', 'b1_int', 'a1_int', 'r2_int', 'g2_int', 'b2_int', 'a2_int']
+    flip_names = ['flip_r1', 'flip_g1', 'flip_b1', 'flip_a1', 'flip_r2', 'flip_g2', 'flip_b2', 'flip_a2']
     declared_variables = []
     code = "//GENERATED CODE START \n"
 
@@ -290,41 +322,42 @@ def validate_generic_pack(packed_values: [], original_values: [], generate_code=
         for channel in channel_names:
             code += f"{channel} = floatBitsToUint({channel});\n"
 
-    # unpack flip-flags (works)
-    p1_target, p2_target = None, None
-    for index, channel in enumerate(original_values):
-        for pair in channel:
-            value, bit, name, rule = pair
-            if name == 'flip_p1':
-                p1_target = index
-            elif name == 'flip_p2':
-                p2_target = index
-            elif name == 'panel_type':
-                if index != 0:
-                    raise RuntimeError("Panel type was displaced!")
+    # find flip flags
+    p1_target, p2_target = flip_pos
     flips = []
     if (p1_target is None) or (p2_target is None):
         raise RuntimeError("Flip flags were not found!")
     targ = [p1_target, p2_target]
 
+    # unpack flip flags
     val = None
-    for n in range(2):
-        if not val or cval != packed_values[targ[n]]:
-            val = packed_values[targ[n]]
-            cval = val
+    if targ[0] == targ[1]:
+        n_range = 1
+        i_range = 8
+    else:
+        n_range = 2
+        i_range = 4
+    for n in range(n_range):
+        val = packed_values[targ[n]]
 
         flips_l = []
-        for i in range(4):
+        if targ[n] == 0:
+            offset = 4
+        else:
+            offset = 0
+
+        for i in range(i_range):
             # get bitflag
-            flips_l.append(bool(val & 1))
-            val >>= 1
+            flips_l.append(bool((val >> (offset + i)) & 1))
 
             # write the rule to the code
             if generate_code:
-                code += ("bool " + flip_names[i]+str(n+1)) + " = " + channel_names[targ[n]] + " & 1; \n"
-                code += channel_names[targ[n]] + " >>= 1; \n"
+                code += "bool " + flip_names[i+4*n] + " = " + channel_names[targ[n]] + ">>" + str(offset + i) + " & 1; \n"
         code += "\n"
         flips.extend(flips_l)
+
+    if flips != flip_check:
+        raise RuntimeError(f"Decoded flips don't match original ones {flips} {flip_check}")
 
     # add flip code to output
     if generate_code:
@@ -354,15 +387,20 @@ def validate_generic_pack(packed_values: [], original_values: [], generate_code=
                 raise RuntimeError(f"{name} doesn't match, {value} != {test_value} at channel {index} "
                                    f"flip: {flips[index]}")
 
-                # add code
-                # check declaration
+            # add code
+            # check declaration
             if generate_code:
                 if name[-2] == ".":
+                    # check for alias
+                    name = GLSL_ALIASES.get(name[:-2], name[:-2]) + name[-2:]
+
                     if name[:-2] not in declared_variables:
                         code += f"{var_type} {name[:-2]}; \n"
                         declared_variables.append(name[:-2])
                     code += f"{name} = "
                 else:
+                    # check for alias
+                    name = GLSL_ALIASES.get(name, name)
                     if name not in declared_variables:
                         declared_variables.append(name)
                     code += f"{var_type} {name} = "
