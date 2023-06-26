@@ -28,9 +28,9 @@ GLOBAL_RULESET = {
     "plane_offset": dict(type="float", min_value=0, max_value=1, raw=False, bits=16),
     "decal_thickness": dict(type="float", min_value=0, max_value=4, raw=False, bits=12),
     "use_FG_mask": dict(type="bool", min_value=0, max_value=1, raw=True, bits=1),
-    "fg_sectors": dict(type="int", min_value=0, max_value=63, raw=True, bits=6),
-    "bg_sectors": dict(type="int", min_value=0, max_value=63, raw=True, bits=6),
-    "sector_offset": dict(type="int", min_value=0, max_value=127, raw=True, bits=7),
+    "fg_sectors": dict(type="int", min_value=0, max_value=31, raw=True, bits=5),
+    "bg_sectors": dict(type="int", min_value=0, max_value=31, raw=True, bits=5),
+    "sector_offset": dict(type="int", min_value=0, max_value=63, raw=True, bits=6),
     "panel_type": dict(type="int", min_value=0, max_value=10, raw=True, bits=4),
 
     # Special: Vec3 position
@@ -118,21 +118,21 @@ class PanelLayer(bpy.types.PropertyGroup):
     sector_offset: bpy.props.IntProperty(
         name="Sector Offset",
         min=0,
-        max=31,
+        max=63,
         update=auto_update,
         default=0
     )
     fg_sectors: bpy.props.IntProperty(
         name="FG Sectors",
         min=0,
-        max=15,
+        max=31,
         update=auto_update,
         default=0
     )
     bg_sectors: bpy.props.IntProperty(
         name="BG Sectors",
         min=0,
-        max=15,
+        max=31,
         update=auto_update,
         default=0
     )
