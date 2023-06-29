@@ -291,11 +291,13 @@ def ultra_generic_packer(values: [], validate=True, generate_code=False) -> [int
         else:
             packed_channels[0] = embed_bits(packed_channels[0], 4, bool_list_to_mask(flips), 8)
 
+    floats = [as_float(v, 'big') for v in packed_channels]
+
     # call validator
     if validate or generate_code:
         flips.reverse()
-        validate_generic_pack(packed_channels, prepacked_channels, flips, [p1_target, p2_target], generate_code)
-    return packed_channels
+        validate_generic_pack(packed_channels.copy(), prepacked_channels, flips, [p1_target, p2_target], generate_code)
+    return floats
 
 
 def validate_generic_pack(packed_values: [], original_values: [], flip_check: [], flip_pos: [], generate_code=False) -> str:
