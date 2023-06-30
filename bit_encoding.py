@@ -139,20 +139,28 @@ def encode_by_rule(values: [], target_ruleset: []) -> [int]:
 def sublist_creator(values, splits):
     # Based on  https://stackoverflow.com/a/61649667
     # and       https://stackoverflow.com/a/613218
+    # not using heapq for now because it can produce an inconsistent result
+    # when two items have the same size, resulting in different sublists
     bins = [[0] for _ in range(splits)]
     values = sorted(values, reverse=True, key=lambda item: item[1])
 
-    # least[0] holds sum of all values in a "bin"
+    # least[0] holds a sum of all values in a "bin"
     for i in values:
         bit = i[1]
-        # check if smallest bin is above 32 limit
-        if bins[0][0] + bit > 32:
+        # check if the smallest bin is above the 32bit limit
+        for b_i, b in enumerate(bins):
+            if b[0] + bit > 32:
+                continue
+            else:
+                target = b_i
+                break
+        else:
             raise ValueError('Cant pack stuff effectively at all')
-        least = bins[0]
+
+        least = bins.pop(target)
         least[0] += bit
         least.append(i)
-        heapreplace(bins, least)
-
+        bins.append(least)
     return [x[1:] for x in bins]
 
 
