@@ -115,22 +115,29 @@ def as_uint(target: float, endian='big') -> int:
     return unpack(fmt_i, bytepres)[0]
 
 
-def encode_int_by_rule(value: float, rule: {}) -> int:
-    if rule["raw"]:
-        return clamp(value, rule["min_value"], rule["max_value"])
-    else:
-        return map_float_to_int_range(value, rule["min_value"], rule["max_value"], rule["bits"])
-
-
 def encode_by_rule(values: [], target_ruleset: []) -> [int]:
     res = [[]] * len(values)
     for i, pair in enumerate(values):
         value, name = pair
         rule = target_ruleset[name]
         if rule["raw"]:
+            rule.update({"signed": False})
             value = clamp(value, rule["min_value"], rule["max_value"])
         else:
-            value = map_float_to_int_range(value, rule["min_value"], rule["max_value"], rule["bits"])
+            if rule["min_value"] < 0:
+                if value < 0:
+                    sign = 1
+                else:
+                    sign = 0
+                bits = rule["bits"] - 1
+                value = map_float_to_int_range(abs(value), 0, rule["max_value"], bits)
+                value = (sign << bits) | value
+                rule = rule.copy()
+                rule["min_value"] = 0
+                rule.update({"signed": True})
+            else:
+                rule.update({"signed": False})
+                value = map_float_to_int_range(value, rule["min_value"], rule["max_value"], rule["bits"])
         # expected conversion structure: [value, bit length, name, rule]
         res[i] = [value, rule["bits"], name, rule]
     return res
@@ -329,8 +336,10 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
     code = "//GENERATED CODE START \n"
 
     if generate_code:
-        for channel in channel_names:
-            code += f"{channel} = floatBitsToUint({channel});\n"
+        postfix = ['.x', '.y', '.z', ''] * 2
+        for i, channel in enumerate(channel_names):
+            t_pixel = f"color" + channel[1] + ("a" * (channel[0] == "a")) + postfix[i]
+            code += f"uint {channel} = floatBitsToUint({t_pixel});\n"
 
     # find flip flags
     p1_target, p2_target = flip_pos
@@ -362,7 +371,7 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
 
             # write the rule to the code
             if generate_code:
-                code += "bool " + flip_names[i+4*n] + " = " + channel_names[targ[n]] + ">>" + str(offset + i) + " & 1; \n"
+                code += f"bool {flip_names[i + 4 * n]} = bool({channel_names[targ[n]]} >> {str(offset + i)}  & 1); \n"
         code += "\n"
         flips.extend(flips_l)
 
@@ -373,8 +382,8 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
     if generate_code:
         for n in range(2):
             for i in range(4):
-                code += f"if ({flip_names[i]+str(n+1)})" + " { \n"
-                code += f"    {channel_names[i + (4*n)]} ^= (1 << 30); \n"
+                code += f"if ({flip_names[i+4*n]})" + " { \n"
+                code += f"    {channel_names[i+4*n]} ^= (1 << 30); \n"
                 code += "} \n"
         code += "\n"
 
@@ -389,10 +398,12 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
             value, bit, name, rule = block
             if name.find('flip') != -1:
                 packed_channel >>= bit
+                if generate_code:
+                    code += f"// Skipping {name} \n"
+                    code += f"{channel_names[index]} >>= {bit}; \n"
                 continue
 
-            var_type = rule["type"]
-            test_value = packed_channel & (2**bit - 1)
+            test_value = packed_channel & (2 ** bit - 1)
             if test_value != value:
                 raise RuntimeError(f"{name} doesn't match, {value} != {test_value} at channel {index} "
                                    f"flip: {flips[index]}")
@@ -400,6 +411,7 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
             # add code
             # check declaration
             if generate_code:
+                var_type = rule["type"]
                 if name[-2] == ".":
                     # check for alias
                     name = GLSL_ALIASES.get(name[:-2], name[:-2]) + name[-2:]
@@ -414,7 +426,14 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
                     if name not in declared_variables:
                         declared_variables.append(name)
                     code += f"{var_type} {name} = "
-                converted_value = f"{channel_names[index]} & (pow(2, {bit}) - 1)"
+
+                if rule['signed']:
+                    bit -= 1
+
+                if bit == 32:
+                    converted_value = f"{channel_names[index]}"
+                else:
+                    converted_value = f"{channel_names[index]} & int(pow(2, {bit}) - 1)"
 
                 if not rule["raw"]:
                     mapped_value = f"map({converted_value}, 0, (pow(2, {bit}) - 1), "
@@ -440,7 +459,20 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
                     mapped_value += "; \n"
                 code += mapped_value
 
-                code += f"{channel_names[index]} >>= {bit}; \n"
+                if rule['signed']:
+                    code += f"{name} *= (({channel_names[index]} >> {bit} & 1) > 0) ? -1 : 1;\n"
+                    bit += 1
+
+                if name == "InDecalThickness":
+                    code += f"float InDecalLength = InDecalThickness * 8; \n"
+                if name == "normal_yaw" or name == "normal_pitch":
+                    if "normal_yaw" in declared_variables and "normal_pitch" in declared_variables:
+                        code += "float x, y, z;\nfloat xz_len = cos(normal_pitch);\nx = xz_len * sin(-normal_yaw);\n" \
+                                "y = sin(normal_pitch);\nz = xz_len * cos(normal_yaw);\n" \
+                                "vec3 InPlaneNormal = vec3(x, y, z);\n"
+
+                if bit < 32:
+                    code += f"{channel_names[index]} >>= {bit}; \n"
                 code += "\n"
 
             packed_channel >>= bit
