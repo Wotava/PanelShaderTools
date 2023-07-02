@@ -244,11 +244,11 @@ class PanelLayer(bpy.types.PropertyGroup):
         'Normalized Fan': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask",
                            "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "plane_normal",
                            "fan_divisions", "angle_offset", "remap_angular", "panel_type"],
-        'UV Normalized Fan': ["remap", "decal_thickness", "use_FG_mask", "fg_sectors",
+        'UV Normalized Fan': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors",
                               "bg_sectors", "sector_offset", "position_2d", "fan_divisions", "angle_offset",
-                              "panel_type"],
+                              "remap_angular", "panel_type"],
         'UV Lines': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
-                     "sector_offset", "position_2d", "line_direction", "panel_type"],
+                     "sector_offset", "line_direction", "panel_type"],
         'UV Circles': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
                        "sector_offset", "position_2d", "panel_type"],
         'UV Circles Tiled': ["distance_sum", "decal_thickness", "use_FG_mask",
@@ -316,8 +316,24 @@ class PanelLayer(bpy.types.PropertyGroup):
                 values.append([self.position_3d.y, "3D_pos.y"])
                 values.append([self.position_3d.z, "3D_pos.z"])
             elif val == "position_2d":
-                values.append([self.position_2d.x, "2D_pos.x"])
-                values.append([self.position_2d.y, "2D_pos.y"])
+                if self.panel_type in ['Cylinder', 'Fan', 'Normalized Fan']:
+                    position: Vector = self.position_2d
+                    normal: Vector = self.plane_normal.normalized()
+
+                    if abs(Vector((0.0, 0.0, 1.0)).dot(normal)) >= 1 - 0.001:
+                        up_vector = Vector((0.0, 1.0, 0.0))
+                    else:
+                        up_vector = Vector((0.0, 0.0, 1.0))
+
+                    local_y = ((normal.cross(up_vector)).cross(normal)).normalized()
+                    local_x = normal.cross(local_y)
+                    local_pos = Vector((position.dot(local_x), position.dot(local_y)))
+
+                    values.append([local_pos.x, "2D_pos.x"])
+                    values.append([local_pos.y, "2D_pos.y"])
+                else:
+                    values.append([self.position_2d.x, "2D_pos.x"])
+                    values.append([self.position_2d.y, "2D_pos.y"])
             elif val == "plane_normal":
                 yaw, pitch = get_rotator(self.plane_normal.normalized())
                 values.append([yaw, "normal_yaw"])
@@ -341,14 +357,18 @@ class PanelLayer(bpy.types.PropertyGroup):
         values = encode_by_rule(values, GLOBAL_RULESET)
         return ultra_generic_packer(values, validate=True)
 
-    def print_conversion_code(self) -> None:
+    def print_conversion_code(self, all_types=False) -> None:
         """Prints generated GLSL float decoding code for current panel preset. Pretty much the same as get_pixel(), but
          passes generate_code=True to the generic packer. A bit hacky approach for now"""
         init_panel_type = self.panel_type
-
-        for p_type in self.sets:
-            self.panel_type = p_type
-            print(f"\n// GENERATED CODE FOR PANEl TYPE {p_type}")
+        if all_types:
+            for p_type in self.sets:
+                self.panel_type = p_type
+                print(f"\n// GENERATED CODE FOR PANEl TYPE {p_type}")
+                values = encode_by_rule(self.get_values(), GLOBAL_RULESET)
+                ultra_generic_packer(values, generate_code=True)
+        else:
+            print(f"\n// GENERATED CODE FOR PANEl TYPE {self.panel_type}")
             values = encode_by_rule(self.get_values(), GLOBAL_RULESET)
             ultra_generic_packer(values, generate_code=True)
 

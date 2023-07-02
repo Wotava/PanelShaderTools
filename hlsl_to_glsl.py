@@ -16,6 +16,7 @@ def update_data_types(line: str) -> str:
     line = line.replace("FLWCScalar", "float")
 
     line = line.replace("Vector3", "vec3")
+    line = line.replace("PI", "M_PI")
     return line
 
 
@@ -33,6 +34,9 @@ def replace_defines(line: str) -> str:
 
 def replace_std_functions(line: str) -> str:
     line = line.replace("fmod", "mod")
+    line = line.replace("frac", "fract")
+    line = line.replace("lerp", "mix")
+    line = line.replace(" & ", " && ", 1)
 
     if line.find("saturate") != -1:
         args = get_function_args(line, "saturate")

@@ -21,7 +21,7 @@ GLSL_ALIASES = {
 
     "fan_divisions": "InDivs",
     "angle_offset": "InAngleOffset",
-    "remap_angular": "InRemap",
+    "remap_angular": "InRemapA",
 
     "tile_direction_2d": "InTileDir",
     "tile_distance": "InTileDist",
@@ -52,13 +52,13 @@ def pi_to_glsl_str(val: float) -> str:
 
 def map_float_to_int_range(value: float, range_min: float, range_max: float, bit_depth: int) -> int:
     range_min_2 = 0
-    range_max_2 = pow(2, bit_depth) - 1
+    range_max_2 = int(pow(2, bit_depth)) - 1
     return int(range_min_2 + (value - range_min) * (range_max_2 - range_min_2) / (range_max - range_min))
 
 
 def map_int_to_float_range(value: float, range_min: int, range_max: int, bit_depth: int) -> float:
     val_range = (range_max - range_min)
-    max_int = pow(2, bit_depth) - 1
+    max_int = int(pow(2, bit_depth)) - 1
     multiplier = value / max_int
     return float(range_min + val_range * multiplier)
 
@@ -333,7 +333,7 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
     channel_names = ['r1_int', 'g1_int', 'b1_int', 'a1_int', 'r2_int', 'g2_int', 'b2_int', 'a2_int']
     flip_names = ['flip_r1', 'flip_g1', 'flip_b1', 'flip_a1', 'flip_r2', 'flip_g2', 'flip_b2', 'flip_a2']
     declared_variables = []
-    code = "//GENERATED CODE START \n"
+    code = "//GENERATED CODE BEGIN \n"
 
     if generate_code:
         postfix = ['.x', '.y', '.z', ''] * 2
@@ -433,10 +433,10 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
                 if bit == 32:
                     converted_value = f"{channel_names[index]}"
                 else:
-                    converted_value = f"{channel_names[index]} & int(pow(2, {bit}) - 1)"
+                    converted_value = f"{channel_names[index]} & (int(pow(2, {bit})) - 1)"
 
                 if not rule["raw"]:
-                    mapped_value = f"map({converted_value}, 0, (pow(2, {bit}) - 1), "
+                    mapped_value = f"map({converted_value}, 0, (int(pow(2, {bit})) - 1), "
                     pi_test = [pi, pi/2]
                     if abs(rule['min_value']) not in pi_test and abs(rule['max_value']) not in pi_test:
                         mapped_value += f"{rule['min_value']}.0, {rule['max_value']}.0)"
