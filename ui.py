@@ -46,6 +46,9 @@ class DATA_UL_PanelLayer(bpy.types.UIList):
                 col.prop(layer, "name", text="", emboss=False, icon='LAYER_ACTIVE')
             else:
                 col.prop(layer, "name", text="", emboss=False, icon='LAYER_USED')
+            col = row.column(align=True)
+            col.scale_x = 0.5
+            col.prop(layer, "panel_type", text="", emboss=False)
 
             col = row.column(align=True)
             col.prop(layer, "use_layer", text="")

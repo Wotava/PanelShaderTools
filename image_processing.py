@@ -381,6 +381,7 @@ class PanelLayer(bpy.types.PropertyGroup):
 
     def draw_panel(self, layout, show_operators=True):
         box = layout.box()
+        blend_box = layout.box()
         row = box.row()
         row.prop(self, "use_layer", text="Enable Layer")
 
@@ -389,17 +390,22 @@ class PanelLayer(bpy.types.PropertyGroup):
 
         i = 0
         for prop in self.sets[self.panel_type]:
-            if i == 0 or i >= 2:
+            if i == 0 or i >= 3:
                 row = box.row(align=True)
                 i = 0
 
             if prop == 'panel_type':
                 continue
-            if prop == "distance_sum" or prop == "remap":
+            elif prop in ["distance_sum", "remap"]:
                 row.prop(self, "plane_dist_A")
                 row.prop(self, "plane_dist_B")
                 i += 2
-                continue
+            elif prop in ["use_FG_mask", "fg_sectors", "bg_sectors", "sector_offset"]:
+                blend_box.prop(self, prop)
+            elif prop in ["plane_normal", "position_2d", "position_3d", "tile_direction_2d", "tile_direction_3d"]:
+                row = box.row(align=True)
+                row.prop(self, prop)
+                i += 3
             else:
                 row.prop(self, prop)
                 i += 1
