@@ -20,8 +20,7 @@ class DebugOperator(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.view.show_developer_ui
-
+        return True
     def execute(self, context):
         context.scene.panel_manager.scene_presets[0].layers[0].print_conversion_code()
         return {'FINISHED'}

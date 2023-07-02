@@ -524,18 +524,7 @@ def unpack_manual(target: int, bits_per_val: [int]) -> [int]:
     return result
 
 
-def rotator_unpack_test(target: float):
-    r_int = as_uint(target)
-
-    pitch = map_int_to_float_range(float(r_int & 32767), 0, 1, 15) * (pi / 2)
-    r_int = r_int >> 15
-    pitch *= 1 - ((r_int & 1) * 2)
-    r_int = r_int >> 1
-
-    yaw = map_int_to_float_range(float(r_int & 32767), 0, 1, 15) * (pi / 2)
-    r_int = r_int >> 15
-    yaw *= 1 - ((r_int & 1) * 2)
-
+def rotator_unpack_test(yaw, pitch):
     xz_len = cos(pitch)
     x = xz_len * sin(-yaw)
     y = sin(pitch)
