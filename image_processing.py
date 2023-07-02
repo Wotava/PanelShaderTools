@@ -34,13 +34,13 @@ GLOBAL_RULESET = {
     "panel_type": dict(type="int", min_value=0, max_value=10, raw=True, bits=4),
 
     # Special: Vec3 position
-    "3D_pos.x": dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
-    "3D_pos.y": dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
-    "3D_pos.z": dict(type="vec3", min_value=-128, max_value=128, raw=False, bits=32),
+    "3D_pos.x": dict(type="vec3", min_value=-128000, max_value=128000, raw=False, bits=32),
+    "3D_pos.y": dict(type="vec3", min_value=-128000, max_value=128000, raw=False, bits=32),
+    "3D_pos.z": dict(type="vec3", min_value=-128000, max_value=128000, raw=False, bits=32),
 
     # Special: Vec2 position (two values input)
-    "2D_pos.x": dict(type="vec2", min_value=-128, max_value=128, raw=False, bits=32),
-    "2D_pos.y": dict(type="vec2", min_value=-128, max_value=128, raw=False, bits=32),
+    "2D_pos.x": dict(type="vec2", min_value=-128000, max_value=128000, raw=False, bits=32),
+    "2D_pos.y": dict(type="vec2", min_value=-128000, max_value=128000, raw=False, bits=32),
 
     # Special: directionless normal rotator
     "normal_yaw": dict(type="float", min_value=-(pi / 2), max_value=(pi / 2), raw=False, bits=24),
@@ -82,15 +82,17 @@ class PanelLayer(bpy.types.PropertyGroup):
     )
     plane_dist_A: bpy.props.FloatProperty(
         name="Plane Distance A",
+        soft_min=0.1,
         min=0.0,
-        max=50.0,
+        max=500.0,
         update=auto_update,
         default=1
     )
     plane_dist_B: bpy.props.FloatProperty(
         name="Plane Distance B",
+        soft_min=0.1,
         min=0.0,
-        max=50.0,
+        max=500.0,
         update=auto_update,
         default=1
     )
@@ -161,18 +163,20 @@ class PanelLayer(bpy.types.PropertyGroup):
 
     position_2d: bpy.props.FloatVectorProperty(
         name="2D Position",
-        subtype='XYZ',
+        description="This position will be reduced from XYZ to XY",
+        subtype='TRANSLATION',
         min=-128000.0,
         max=128000.0,
-        size=2,
+        step=100*100,
         update=auto_update,
-        default=[0.0, 1.0]
+        default=[0.0, 0.0, 1.0]
     )
     position_3d: bpy.props.FloatVectorProperty(
         name="3D Position",
-        subtype='XYZ',
+        subtype='TRANSLATION',
         min=-128000.0,
         max=128000.0,
+        step=100*100,
         update=auto_update,
         default=[0.0, 0.0, 1.0]
     )
