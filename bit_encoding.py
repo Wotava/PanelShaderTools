@@ -433,10 +433,10 @@ def validate_generic_pack(packed_values: [], original_values: [], flip_check: []
                 if bit == 32:
                     converted_value = f"{channel_names[index]}"
                 else:
-                    converted_value = f"{channel_names[index]} & (int(pow(2, {bit})) - 1)"
+                    converted_value = f"{channel_names[index]} & (uint(pow(2, {bit})) - 1)"
 
                 if not rule["raw"]:
-                    mapped_value = f"map({converted_value}, 0, (int(pow(2, {bit})) - 1), "
+                    mapped_value = f"map({converted_value}, 0, (uint(pow(2, {bit})) - 1), "
                     pi_test = [pi, pi/2]
                     if abs(rule['min_value']) not in pi_test and abs(rule['max_value']) not in pi_test:
                         mapped_value += f"{rule['min_value']}.0, {rule['max_value']}.0)"
