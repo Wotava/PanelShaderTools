@@ -372,6 +372,11 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
     bl_label = "Define Plane Normal"
     bl_idname = "panels.define_plane_normal"
     bl_options = {'REGISTER', 'UNDO'}
+
+    target: bpy.props.StringProperty(
+        name="Property to Set",
+        default="plane_normal"
+    )
     
     @classmethod
     def poll(cls, context):
@@ -381,35 +386,41 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
         # find selected vertices
 
         selection = [vert.co for vert in self.bm.verts if vert.select]
-        target_location: Vector = (selection[0] - selection[1])
-        target_location.normalize()
-
         target_layer = context.scene.panel_manager.get_active().get_active()
-        target_layer.plane_normal = target_location
+        world_matrix = context.active_object.matrix_world
 
-        if context.scene.panel_manager.use_auto_offset:
-            target_vert_co = Vector((0.0, 0.0, 0.0))
+        if self.target in ["plane_normal", "tile_direction_3d"]:
+            selection = []
             for elem in reversed(self.bm.select_history):
                 if isinstance(elem, bmesh.types.BMVert):
-                    target_vert_co = elem.co
-                    break
+                    selection.append(elem.co)
+                    if len(selection) == 2:
+                        break
 
-            if target_vert_co == Vector((0.0, 0.0, 0.0)):
+            target_location: Vector = (selection[0] - selection[1])
+            target_location.normalize()
+            setattr(target_layer, self.target, target_location)
+
+            if self.target == "plane_normal" and context.scene.panel_manager.use_auto_offset:
                 target_vert_co = selection[0]
 
-            world_matrix = context.active_object.matrix_world
-            target_vert_co = world_matrix @ target_vert_co
-            x = target_vert_co.dot(target_layer.plane_normal)
-            y = target_layer.plane_dist_A + target_layer.plane_dist_B
-            target_layer.plane_offset = (x % y) / y
-            if target_layer.plane_normal.z >= 0:
-                target_layer.plane_offset = 1 - target_layer.plane_offset
-            self.report({"INFO"}, "Value set with offset, operator exit")
+                target_vert_co = world_matrix @ target_vert_co
+                x = target_vert_co.dot(target_layer.plane_normal)
+                y = target_layer.plane_dist_A + target_layer.plane_dist_B
+                target_layer.plane_offset = (x % y) / y
+                if target_layer.plane_normal.z >= 0:
+                    target_layer.plane_offset = 1 - target_layer.plane_offset
+                self.report({"INFO"}, f"{self.target} value set with auto-offset, operator exit")
+            else:
+                self.report({"INFO"}, f"{self.target} value set as normal, operator exit")
         else:
-            self.report({"INFO"}, "Value set, operator exit")
+            # calculate median location
+            center = sum(selection, Vector()) / len(selection)
+            center = world_matrix @ center
+            setattr(target_layer, self.target, center)
+            self.report({"INFO"}, f"{self.target} value set, operator exit")
 
         self.finished = True
-
         return {'FINISHED'}
 
     def modal(self, context, event):
@@ -438,17 +449,19 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
         else:
             self.start_mode = 'EDIT'
 
-        if context.object.data.total_vert_sel > 0 and context.object.data.total_vert_sel != 2:
+        if self.target in ["plane_normal", "tile_direction_3d"] and context.object.data.total_vert_sel != 2:
             bpy.ops.mesh.select_all(action='DESELECT')
 
         self.cancelled = False
         self.finished = False
         self.bm = bmesh.from_edit_mesh(context.edit_object.data)
 
-        if context.object.data.total_vert_sel == 2:
+        if self.target in ["plane_normal", "tile_direction_3d"] and context.object.data.total_vert_sel == 2:
             self.execute(context)
             return {'FINISHED'}
-
+        elif self.target != "plane_normal" and context.object.data.total_vert_sel >= 1:
+            self.execute(context)
+            return {'FINISHED'}
 
         bpy.ops.transform.translate('INVOKE_DEFAULT')
         context.window_manager.modal_handler_add(self)

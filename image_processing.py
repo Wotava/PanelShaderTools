@@ -309,7 +309,6 @@ class PanelLayer(bpy.types.PropertyGroup):
                     distance_remap = self.plane_dist_B / distance_sum
                 else:
                     distance_remap = 0
-
                 if val == "distance_sum":
                     values.append([distance_sum, "distance_sum"])
                     values.append([distance_remap, "remap"])
@@ -323,6 +322,8 @@ class PanelLayer(bpy.types.PropertyGroup):
                 if self.panel_type in ['Cylinder', 'Fan', 'Normalized Fan']:
                     position: Vector = self.position_2d
                     normal: Vector = self.plane_normal.normalized()
+                    if normal.z < 0:
+                        normal.negate()
 
                     if abs(Vector((0.0, 0.0, 1.0)).dot(normal)) >= 1 - 0.001:
                         up_vector = Vector((0.0, 1.0, 0.0))
@@ -332,7 +333,6 @@ class PanelLayer(bpy.types.PropertyGroup):
                     local_y = ((normal.cross(up_vector)).cross(normal)).normalized()
                     local_x = normal.cross(local_y)
                     local_pos = Vector((position.dot(local_x), position.dot(local_y)))
-
                     values.append([local_pos.x, "2D_pos.x"])
                     values.append([local_pos.y, "2D_pos.y"])
                 else:
@@ -413,6 +413,10 @@ class PanelLayer(bpy.types.PropertyGroup):
             else:
                 row.prop(self, prop)
                 i += 1
+
+            if show_operators and prop in ["plane_normal", "position_2d", "position_3d", "tile_direction_3d"]:
+                op = row.operator("panels.define_plane_normal", icon="ORIENTATION_NORMAL", text="Set")
+                op.target = prop
         return
 
     def reset_to_default(self):
