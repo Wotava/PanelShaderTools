@@ -32,6 +32,7 @@ GLOBAL_RULESET = {
     "bg_sectors": dict(type="int", min_value=0, max_value=31, raw=True, bits=5),
     "sector_offset": dict(type="int", min_value=0, max_value=63, raw=True, bits=6),
     "panel_type": dict(type="int", min_value=0, max_value=10, raw=True, bits=4),
+    "use_inset": dict(type="bool", min_value=0, max_value=1, raw=True, bits=1),
 
     # Special: Vec3 position
     "3D_pos.x": dict(type="vec3", min_value=-128000, max_value=128000, raw=False, bits=32),
@@ -167,7 +168,6 @@ class PanelLayer(bpy.types.PropertyGroup):
         subtype='TRANSLATION',
         min=-128000.0,
         max=128000.0,
-        step=100*100,
         update=auto_update,
         default=[0.0, 0.0, 1.0]
     )
@@ -176,7 +176,6 @@ class PanelLayer(bpy.types.PropertyGroup):
         subtype='TRANSLATION',
         min=-128000.0,
         max=128000.0,
-        step=100*100,
         update=auto_update,
         default=[0.0, 0.0, 1.0]
     )
@@ -230,6 +229,12 @@ class PanelLayer(bpy.types.PropertyGroup):
         update=auto_update,
         default='UV Lines'
     )
+    use_inset: bpy.props.BoolProperty(
+        name="Use Inset UVs",
+        description="Switches UVs fed to UV panel generators",
+        update=auto_update,
+        default=False
+    )
 
     # Internal usage
     use_layer: bpy.props.BoolProperty(
@@ -250,16 +255,16 @@ class PanelLayer(bpy.types.PropertyGroup):
                            "fan_divisions", "angle_offset", "remap_angular", "panel_type"],
         'UV Normalized Fan': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors",
                               "bg_sectors", "sector_offset", "position_2d", "fan_divisions", "angle_offset",
-                              "remap_angular", "panel_type"],
+                              "remap_angular", "use_inset", "panel_type"],
         'UV Lines': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
-                     "sector_offset", "line_direction", "panel_type"],
+                     "sector_offset", "line_direction", "use_inset", "panel_type"],
         'UV Circles': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
-                       "sector_offset", "position_2d", "panel_type"],
+                       "sector_offset", "position_2d", "use_inset", "panel_type"],
         'UV Circles Tiled': ["distance_sum", "decal_thickness", "use_FG_mask",
                              "fg_sectors", "bg_sectors", "sector_offset", "position_2d", "tile_direction_2d",
-                             "tile_distance", "panel_type"],
+                             "tile_distance", "use_inset", "panel_type"],
         'UV Fan': ["decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors", "sector_offset", "position_2d",
-                   "fan_divisions", "angle_offset", "remap_angular", "panel_type"],
+                   "fan_divisions", "angle_offset", "remap_angular", "use_inset", "panel_type"],
         'Spherical': ["distance_sum", "plane_offset", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
                       "sector_offset", "position_3d", "panel_type"],
         'Spherical Tiled': ["distance_sum", "decal_thickness", "use_FG_mask", "fg_sectors", "bg_sectors",
