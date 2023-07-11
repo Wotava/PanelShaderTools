@@ -72,9 +72,14 @@ class DATA_PT_PanelShader(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+
+        # Active preset index is stored in scene panel manager
         manager: LayerManager = context.scene.panel_manager
+        # Presets are stored in addon's preferences
+        addon_prefs = context.preferences.addons[__package__].preferences
+
         row = layout.row()
-        row.template_list("DATA_UL_PanelPreset", "", manager, "scene_presets", manager,
+        row.template_list("DATA_UL_PanelPreset", "", addon_prefs, "presets", manager,
                           "active_preset")
         col = row.column(align=True)
         col.operator("panels.add_preset", icon='ADD', text="")

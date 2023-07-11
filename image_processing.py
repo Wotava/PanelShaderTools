@@ -18,6 +18,9 @@ def auto_update(self, context) -> None:
     if context.scene.panel_manager.use_auto_update:
         manager: LayerManager = context.scene.panel_manager
         manager.write_preset(manager.active_preset)
+        # force-update all visible objects to reflect changes
+        for obj in context.visible_objects:
+            obj.data.update()
 
 
 GLOBAL_RULESET = {
@@ -518,13 +521,29 @@ class LayerPreset(bpy.types.PropertyGroup):
             current_layer.draw_panel(layout, show_operators)
 
 
-class LayerManager(bpy.types.PropertyGroup):
-    """Controls all layer presets in the scene and handles images"""
-    scene_presets: bpy.props.CollectionProperty(
+class AddonPresetStorage(bpy.types.AddonPreferences):
+    """Addon preferences container. This class acts like a storage for all panel presets."""
+    bl_idname = __package__
+
+    presets: bpy.props.CollectionProperty(
         type=LayerPreset,
         name="Scene Presets",
-        description="All Panel Presets in this Scene"
+        description="All Panel Presets"
     )
+
+    def draw(self, context):
+        layout = self.layout
+
+
+class LayerManager(bpy.types.PropertyGroup):
+    """Controls all layer presets in the scene and handles images"""
+
+    @property
+    def scene_presets(self):
+        preferences = bpy.context.preferences
+        addon_prefs = preferences.addons[__package__].preferences
+        return addon_prefs.presets
+
     active_preset: bpy.props.IntProperty(
         name="Active Preset Index",
         default=0

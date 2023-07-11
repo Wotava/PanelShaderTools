@@ -28,6 +28,7 @@ bl_info = {
 classes = [
     image_processing.PanelLayer,
     image_processing.LayerPreset,
+    image_processing.AddonPresetStorage,
     image_processing.LayerManager,
     ui.DATA_UL_PanelPreset,
     ui.DATA_UL_PanelLayer,
