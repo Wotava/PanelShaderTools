@@ -535,7 +535,7 @@ class LayerManager(bpy.types.PropertyGroup):
     )
     max_layers: bpy.props.IntProperty(
         name="Max Amount of Layers per Preset",
-        default=8
+        default=MAX_LAYERS
     )
     use_auto_update: bpy.props.BoolProperty(
         name="Enable Auto-Update",
@@ -631,7 +631,7 @@ class LayerManager(bpy.types.PropertyGroup):
                     box = layout.box()
                 box.row(align=True).label(text="Incorrect color space", icon='ERROR')
 
-        if pow(self.target_image.size[0], 2) < (len(self.scene_presets) * 8):
+        if pow(self.target_image.size[0], 2) < (len(self.scene_presets) * (MAX_LAYERS * PIXELS_PER_LAYER)):
             check_passed = False
             if layout:
                 if not box:
@@ -655,7 +655,7 @@ class LayerManager(bpy.types.PropertyGroup):
             self.target_image.colorspace_settings.name = 'Non-Color'
             changes += " color space,"
 
-        if pow(self.target_image.size[0], 2) < (len(self.scene_presets) * 8):
+        if pow(self.target_image.size[0], 2) < (len(self.scene_presets) * (MAX_LAYERS * PIXELS_PER_LAYER)):
             for i in range(0, 9):
                 if pow(2, i) > pow(self.target_image.size[0], 2):
                     changes += f" image size {self.target_image.size[0]}x{self.target_image.size[0]} " \
