@@ -17,7 +17,7 @@ verbose = 0
 def auto_update(self, context) -> None:
     if context.scene.panel_manager.use_auto_update:
         manager: LayerManager = context.scene.panel_manager
-        manager.write_preset(manager.active_preset)
+        manager.write_preset(manager.active_preset_index)
         # force-update all visible objects to reflect changes
         for obj in context.visible_objects:
             obj.data.update()
@@ -446,7 +446,12 @@ class LayerPreset(bpy.types.PropertyGroup):
         name="Panel Layers",
         description="Layers associated with this object"
     )
-    active_layer: bpy.props.IntProperty(
+
+    @property
+    def active_layer(self) -> PanelLayer:
+        return self.layers[self.active_layer_index]
+
+    active_layer_index: bpy.props.IntProperty(
         name="Active Layer Index",
         default=0
     )
@@ -458,6 +463,7 @@ class LayerPreset(bpy.types.PropertyGroup):
                 new_layer.match(match_target)
             else:
                 new_layer.name = "Layer Preset №" + str(len(self.layers) - 1)
+            self.active_layer_index = len(self.layers) - 1
             return new_layer
         else:
             print(f"Layer cap at {MAX_LAYERS} reached")
@@ -466,8 +472,10 @@ class LayerPreset(bpy.types.PropertyGroup):
     def remove_layer(self, index: int = -1):
         if index > -1:
             self.layers.remove(index)
+            if self.active_layer_index > 0:
+                self.active_layer_index -= 1
         else:
-            self.layers.remove(self.active_layer)
+            self.layers.remove(self.active_layer_index)
 
     def get_pixel_strip(self) -> [float]:
         """Returns a list of floats to compose a pixel from. List is filled with empty values until it matches the
@@ -486,13 +494,10 @@ class LayerPreset(bpy.types.PropertyGroup):
         for i in range(0, target_len):
             self.add_layer(target.layers[i])
         self.name = target.name + " copy"
-        self.active_layer = target.active_layer
-
-    def get_active(self) -> PanelLayer:
-        return self.layers[self.active_layer]
+        self.active_layer_index = target.active_layer_index
 
     def clean(self):
-        self.active_layer = -1
+        self.active_layer_index = -1
         for i in range(len(self.layers), -1, -1):
             self.remove_layer(i)
 
@@ -500,7 +505,7 @@ class LayerPreset(bpy.types.PropertyGroup):
         # LAYERS
         row = layout.row()
         row.template_list("DATA_UL_PanelLayer", "", self, "layers", self,
-                          "active_layer")
+                          "active_layer_index")
         col = row.column(align=True)
         col.operator("panels.add_layer", icon='ADD', text="")
         col.operator("panels.remove_layer", icon='REMOVE', text="")
@@ -509,15 +514,15 @@ class LayerPreset(bpy.types.PropertyGroup):
         col.operator("panels.duplicate_layer", icon='DUPLICATE', text="")
         col.separator()
 
-        if len(self.layers) > 2 and self.active_layer > 0:
+        if len(self.layers) > 2 and self.active_layer_index > 0:
             op = col.operator("panels.move_layer", icon='TRIA_UP', text="")
             op.move_up = True
-        if len(self.layers) > 2 and self.active_layer < (len(self.layers) - 1):
+        if len(self.layers) > 2 and self.active_layer_index < (len(self.layers) - 1):
             op = col.operator("panels.move_layer", icon='TRIA_DOWN', text="")
             op.move_up = False
 
         if len(self.layers) > 0:
-            current_layer = self.get_active()
+            current_layer = self.active_layer
             current_layer.draw_panel(layout, show_operators)
 
 
@@ -539,12 +544,17 @@ class LayerManager(bpy.types.PropertyGroup):
     """Controls all layer presets in the scene and handles images"""
 
     @property
-    def scene_presets(self):
+    def presets(self):
         preferences = bpy.context.preferences
         addon_prefs = preferences.addons[__package__].preferences
         return addon_prefs.presets
 
-    active_preset: bpy.props.IntProperty(
+    @property
+    def active_preset(self) -> LayerPreset:
+        """Returns a ref to the active preset"""
+        return self.presets[self.active_preset_index]
+
+    active_preset_index: bpy.props.IntProperty(
         name="Active Preset Index",
         default=0
     )
@@ -568,15 +578,17 @@ class LayerManager(bpy.types.PropertyGroup):
     )
 
     def new_preset(self):
-        """Create new preset with given name"""
-        return self.scene_presets.add()
+        """Creates a new panel preset and sets it as active. Returns created LayerPreset object"""
+        new_preset = self.presets.add()
+        self.active_preset_index = len(self.presets) - 1
+        return new_preset
 
     def remove_preset(self, index: int = None, destroy=False):
         """Remove and do something with linked objects"""
         if index:
             target = index
         else:
-            target = self.active_preset
+            target = self.active_preset_index
 
         if destroy:
             attrib_array = np.zeros((1), int)
@@ -595,20 +607,31 @@ class LayerManager(bpy.types.PropertyGroup):
                 attrib_array[attrib_array > target] -= 1
                 attrib.foreach_set('value', attrib_array.tolist())
                 obj.data.update()
-            self.scene_presets.remove(target)
+            self.presets.remove(target)
         else:
-            self.scene_presets[target].clean()
+            self.presets[target].clean()
 
-    def duplicate_preset(self, index: int):
+        if self.active_preset_index > 0:
+            self.active_preset_index -= 1
+
+    def duplicate_preset(self, index: int = None):
         """Duplicate preset at the given index"""
-        pass
+        if index:
+            target_preset = self.presets[index]
+        else:
+            target_preset = self.active_preset
+
+        new_preset = self.new_preset()
+        new_preset.match(target_preset)
+        self.active_preset_index = len(self.presets) - 1
+        return new_preset
 
     def write_preset(self, preset_id: int, image: bpy.types.Image = None) -> None:
         """Used update some preset on-the-go when values are changed"""
         if not image:
             image = self.target_image
 
-        preset: LayerPreset = self.scene_presets[preset_id]
+        preset: LayerPreset = self.presets[preset_id]
         pixels = preset.get_pixel_strip()
         start_pos = preset_id * len(pixels)
         end_pos = start_pos + len(pixels)
@@ -620,7 +643,7 @@ class LayerManager(bpy.types.PropertyGroup):
         if not image:
             image = self.target_image
 
-        for i in range(0, len(self.scene_presets)):
+        for i in range(0, len(self.presets)):
             self.write_preset(i, image)
 
     def clean_image(self, image: bpy.types.Image = None) -> None:
@@ -628,10 +651,6 @@ class LayerManager(bpy.types.PropertyGroup):
             image = self.target_image
         for i in range(0, len(image.pixels)):
             image.pixels[i] = 0.0
-
-    def read_image(self):
-        """Reads presets from specified image and appends them to Scene"""
-        pass
 
     def check_image(self, layout=None) -> bool:
         box = None
@@ -650,7 +669,7 @@ class LayerManager(bpy.types.PropertyGroup):
                     box = layout.box()
                 box.row(align=True).label(text="Incorrect color space", icon='ERROR')
 
-        if pow(self.target_image.size[0], 2) < (len(self.scene_presets) * (MAX_LAYERS * PIXELS_PER_LAYER)):
+        if pow(self.target_image.size[0], 2) < (len(self.presets) * (MAX_LAYERS * PIXELS_PER_LAYER)):
             check_passed = False
             if layout:
                 if not box:
@@ -674,7 +693,7 @@ class LayerManager(bpy.types.PropertyGroup):
             self.target_image.colorspace_settings.name = 'Non-Color'
             changes += " color space,"
 
-        if pow(self.target_image.size[0], 2) < (len(self.scene_presets) * (MAX_LAYERS * PIXELS_PER_LAYER)):
+        if pow(self.target_image.size[0], 2) < (len(self.presets) * (MAX_LAYERS * PIXELS_PER_LAYER)):
             for i in range(0, 9):
                 if pow(2, i) > pow(self.target_image.size[0], 2):
                     changes += f" image size {self.target_image.size[0]}x{self.target_image.size[0]} " \
@@ -686,13 +705,7 @@ class LayerManager(bpy.types.PropertyGroup):
 
         return changes
 
-    def get_active(self) -> LayerPreset:
-        """Return ref to active preset"""
-        return self.scene_presets[self.active_preset]
-
     def draw_panel(self, layout):
-        active_preset = self.get_active()
-
         # Target Image selection
         row = layout.row()
         col = row.column(align=True)
@@ -714,4 +727,4 @@ class LayerManager(bpy.types.PropertyGroup):
         layout.row().prop(self, "use_auto_update", icon='FILE_REFRESH')
         layout.row().prop(self, "use_auto_offset", icon='MOD_LENGTH')
 
-        active_preset.draw_panel(layout)
+        self.active_preset.draw_panel(layout)

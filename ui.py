@@ -80,7 +80,7 @@ class DATA_PT_PanelShader(bpy.types.Panel):
 
         row = layout.row()
         row.template_list("DATA_UL_PanelPreset", "", addon_prefs, "presets", manager,
-                          "active_preset")
+                          "active_preset_index")
         col = row.column(align=True)
         col.operator("panels.add_preset", icon='ADD', text="")
         col.operator("panels.remove_preset", icon='REMOVE', text="")
@@ -88,5 +88,5 @@ class DATA_PT_PanelShader(bpy.types.Panel):
         col.operator("panels.duplicate_preset", icon='DUPLICATE', text="")
 
         # Display layer props
-        if len(manager.scene_presets) > 0:
+        if len(manager.presets) > 0:
             manager.draw_panel(layout)

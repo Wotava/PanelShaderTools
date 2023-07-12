@@ -21,8 +21,9 @@ class DebugOperator(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         return True
+
     def execute(self, context):
-        context.scene.panel_manager.scene_presets[0].layers[0].print_conversion_code()
+        context.scene.panel_manager.active_preset.layers[0].print_conversion_code()
         return {'FINISHED'}
 
 
@@ -37,7 +38,6 @@ class PANELS_OP_AddPreset(bpy.types.Operator):
 
     def execute(self, context):
         context.scene.panel_manager.new_preset()
-        context.scene.panel_manager.active_preset = len(context.scene.panel_manager.scene_presets) - 1
         return {'FINISHED'}
 
 
@@ -55,16 +55,11 @@ class PANELS_OP_RemovePreset(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.scene_presets) > 0
+        return len(context.scene.panel_manager.presets) > 0
 
     def execute(self, context):
-        if self.destructive:
-            context.scene.panel_manager.remove_preset(destroy=True)
-            if context.scene.panel_manager.active_preset > 0:
-                context.scene.panel_manager.active_preset -= 1
-            context.scene.panel_manager.clean_image()
-        else:
-            context.scene.panel_manager.remove_preset(destroy=False)
+        context.scene.panel_manager.remove_preset(destroy=self.destructive)
+        context.scene.panel_manager.clean_image()
         bpy.ops.panels.bake_presets()
         return {'FINISHED'}
 
@@ -79,12 +74,10 @@ class PANELS_OP_AddLayer(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.get_active().layers) < context.scene.panel_manager.max_layers
+        return len(context.scene.panel_manager.active_preset.layers) < context.scene.panel_manager.max_layers
 
     def execute(self, context):
-        # TODO make it insert layer next to active
-        context.scene.panel_manager.get_active().add_layer()
-        context.scene.panel_manager.get_active().active_layer = len(context.scene.panel_manager.get_active().layers) - 1
+        context.scene.panel_manager.active_preset.add_layer()
         bpy.ops.panels.bake_presets()
         update_objects(context.visible_objects)
         return {'FINISHED'}
@@ -97,12 +90,10 @@ class PANELS_OP_RemoveLayer(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.get_active().layers) > 0
+        return len(context.scene.panel_manager.active_preset.layers) > 0
 
     def execute(self, context):
-        # TODO make it insert layer next to active
-        context.scene.panel_manager.get_active().remove_layer()
-        context.scene.panel_manager.get_active().active_layer = len(context.scene.panel_manager.get_active().layers) - 1
+        context.scene.panel_manager.active_preset.remove_layer()
         bpy.ops.panels.bake_presets()
         update_objects(context.visible_objects)
         return {'FINISHED'}
@@ -120,13 +111,13 @@ class PANELS_OP_MoveLayer(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.get_active().layers) > 1
+        return len(context.scene.panel_manager.active_preset.layers) > 1
 
     def execute(self, context):
         manager = context.scene.panel_manager
-        active_preset = manager.get_active()
+        active_preset = manager.active_preset
 
-        current_index = active_preset.active_layer
+        current_index = active_preset.active_layer_index
         target_index = current_index
 
         if self.move_up:
@@ -140,7 +131,7 @@ class PANELS_OP_MoveLayer(bpy.types.Operator):
             return {'CANCELLED'}
 
         active_preset.layers.move(current_index, target_index)
-        active_preset.active_layer = target_index
+        active_preset.active_layer_index = target_index
         manager.write_image()
         update_objects(context.visible_objects)
         return {'FINISHED'}
@@ -153,20 +144,17 @@ class PANELS_OP_DuplicateLayer(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.get_active().layers) > 0
+        return len(context.scene.panel_manager.active_preset.layers) > 0
 
     def execute(self, context):
         manager = context.scene.panel_manager
-        active_preset = manager.get_active()
-
-        current_index = active_preset.active_layer
-        current_layer = active_preset.layers[current_index]
+        active_preset = manager.active_preset
+        current_layer = active_preset.active_layer
 
         new_layer = active_preset.layers.add()
         new_layer.match(current_layer)
 
-        # TODO make an insert instead of adding new item to the end of the list
-        active_preset.active_layer = len(active_preset.layers) - 1
+        active_preset.active_layer_index = len(active_preset.layers) - 1
         manager.write_image()
         update_objects(context.visible_objects)
         return {'FINISHED'}
@@ -185,7 +173,7 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
 
     def execute(self, context):
         target = context.object.data.attributes
-        active_preset_index = context.scene.panel_manager.active_preset
+        active_preset_index = context.scene.panel_manager.active_preset_index
 
         bm = bmesh.from_edit_mesh(context.object.data)
         selected = [f.index for f in bm.faces if f.select]
@@ -217,7 +205,7 @@ class PANELS_OP_SelectFacesFromPreset(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         return context.object and context.object.type == 'MESH' \
-            and len(context.scene.panel_manager.scene_presets) > 0
+            and len(context.scene.panel_manager.presets) > 0
 
     def execute(self, context):
         # Switch
@@ -225,10 +213,9 @@ class PANELS_OP_SelectFacesFromPreset(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='DESELECT')
 
-        target_id = context.scene.panel_manager.active_preset
+        target_id = context.scene.panel_manager.active_preset_index
 
         if len(context.selected_objects) == 0:
-            # self.report({'ERROR'}, f"No objects selected or no active object")
             targets = [context.object]
         else:
             targets = context.selected_objects
@@ -262,7 +249,7 @@ class PANELS_OP_SelectPresetFromFace(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         return context.object and context.object.type == 'MESH' \
-            and context.object.data.total_face_sel == 1 and len(context.scene.panel_manager.scene_presets) > 0
+            and context.object.data.total_face_sel == 1 and len(context.scene.panel_manager.presets) > 0
 
     def get_active_preset(self, context):
         mesh = context.object.data
@@ -284,8 +271,8 @@ class PANELS_OP_SelectPresetFromFace(bpy.types.Operator):
     def execute(self, context):
         if not self.call_edit:
             target_id = self.get_active_preset(context)
-            if len(context.scene.panel_manager.scene_presets) - 1 >= target_id >= 0:
-                context.scene.panel_manager.active_preset = target_id
+            if len(context.scene.panel_manager.presets) - 1 >= target_id >= 0:
+                context.scene.panel_manager.active_preset_index = target_id
                 self.report({'INFO'}, f"Selected preset #{target_id}")
             else:
                 self.report({'ERROR'}, f"Requested preset #{target_id} is out of range")
@@ -293,7 +280,7 @@ class PANELS_OP_SelectPresetFromFace(bpy.types.Operator):
             bpy.ops.mesh.select_all(action='DESELECT')
         else:
             if self.start_preset:
-                context.scene.panel_manager.active_preset = self.start_preset
+                context.scene.panel_manager.active_preset_index = self.start_preset
                 self.report({'INFO'}, f"Restoring preset {self.start_preset}, operator exit")
         return {'FINISHED'}
 
@@ -301,16 +288,16 @@ class PANELS_OP_SelectPresetFromFace(bpy.types.Operator):
         layout = self.layout
         if not self.active_preset:
             self.active_preset = self.get_active_preset(context)
-        context.scene.panel_manager.scene_presets[self.active_preset].draw_panel(layout, False)
+        context.scene.panel_manager.presets[self.active_preset].draw_panel(layout, False)
 
     def invoke(self, context, event):
         self.cancelled = False
         self.finished = False
         start_preset = None
         if self.call_edit:
-            self.start_preset = context.scene.panel_manager.active_preset
+            self.start_preset = context.scene.panel_manager.active_preset_index
             self.active_preset = self.get_active_preset(context)
-            context.scene.panel_manager.active_preset = self.active_preset
+            context.scene.panel_manager.active_preset_index = self.active_preset
             return context.window_manager.invoke_props_dialog(self)
         else:
             self.execute(context)
@@ -324,17 +311,10 @@ class PANELS_OP_DuplicatePreset(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.scene_presets) > 0
+        return len(context.scene.panel_manager.presets) > 0
 
     def execute(self, context):
-        manager = context.scene.panel_manager
-        current_preset = manager.get_active()
-
-        new_preset = manager.scene_presets.add()
-        new_preset.match(current_preset)
-
-        # TODO make an insert instead of adding new item to the end of the list
-        manager.active_preset = len(manager.scene_presets) - 1
+        context.scene.panel_manager.duplicate_preset()
         return {'FINISHED'}
 
 
@@ -386,7 +366,7 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
         # find selected vertices
 
         selection = [vert.co for vert in self.bm.verts if vert.select]
-        target_layer = context.scene.panel_manager.get_active().get_active()
+        target_layer = context.scene.panel_manager.active_preset.active_layer
         world_matrix = context.active_object.matrix_world
 
         if self.target in ["plane_normal", "tile_direction_3d"]:
