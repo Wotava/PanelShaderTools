@@ -423,6 +423,7 @@ class PanelLayer(bpy.types.PropertyGroup):
                 i += 1
 
             if show_operators and prop in ["plane_normal", "position_2d", "position_3d", "tile_direction_3d"]:
+                row.separator()
                 op = row.operator("panels.define_plane_normal", icon="ORIENTATION_NORMAL", text="Set")
                 op.target = prop
         return

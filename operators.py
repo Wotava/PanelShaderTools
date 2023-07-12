@@ -58,6 +58,10 @@ class PANELS_OP_RemovePreset(bpy.types.Operator):
         return len(context.scene.panel_manager.presets) > 0
 
     def execute(self, context):
+        if context.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        bpy.ops.ed.undo_push()
         context.scene.panel_manager.remove_preset(destroy=self.destructive)
         context.scene.panel_manager.clean_image()
         bpy.ops.panels.bake_presets()
@@ -351,7 +355,6 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
     """Define plane normal for a layer by selecting either an edge or two vertices"""
     bl_label = "Define Plane Normal"
     bl_idname = "panels.define_plane_normal"
-    bl_options = {'REGISTER', 'UNDO'}
 
     target: bpy.props.StringProperty(
         name="Property to Set",
