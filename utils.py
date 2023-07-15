@@ -1,7 +1,57 @@
+import bpy
+from bpy.props import FloatVectorProperty
+import numpy as np
+
 from math import asin, atan2, cos, sin, pi
 from mathutils import Vector
 
 verbose = 0
+
+
+class Transform(bpy.types.PropertyGroup):
+    location: FloatVectorProperty(
+        name="Location",
+        subtype='XYZ',
+        default=[0.0, 0.0, 0.0]
+    )
+    rotation: FloatVectorProperty(
+        name="Rotation",
+        subtype='QUATERNION',
+        size=4,
+        default=[0.0, 0.0, 0.0, 0.0]
+    )
+    scale: FloatVectorProperty(
+        name="Scale",
+        subtype='XYZ',
+        default=[0.0, 0.0, 0.0]
+    )
+
+    def from_obj(self, obj):
+        self.location = obj.location
+        if obj.rotation_mode == 'QUATERNION':
+            self.rotation = obj.rotation_quaternion
+        elif obj.rotation_mode == 'AXIS_ANGLE':
+            raise Exception("Axis-Angle rotation is not supported")
+        else:
+            self.rotation = obj.rotation_euler.to_quaternion()
+        self.scale = obj.scale
+
+
+def vector_angle(v1, v2, normalized):
+    if v1 == v2:
+        return 0
+
+    if not normalized:
+        v1_u = v1 / np.linalg.norm(v1)
+        v2_u = v2 / np.linalg.norm(v2)
+        return np.degrees(np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0)))
+    else:
+        return np.degrees(np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0)))
+
+
+def get_direction_vector(start, end):
+    vec = Vector((end.x - start.x, end.y - start.y, end.z - start.z))
+    return vec.normalized()
 
 
 def get_rotator(vec: Vector, limit_range=True) -> [float]:

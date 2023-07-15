@@ -2,7 +2,8 @@ import math
 
 import bpy
 import bmesh
-from mathutils import Vector
+from mathutils import Vector, Euler, Matrix, Quaternion
+from . utils import Transform
 import numpy as np
 ATTRIBUTE_NAME = "panel_preset_index"
 
@@ -185,7 +186,7 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
         # A hacky way of writing attributes and getting selected faces
         # from OBJECT mode because in EDIT attribute data is empty
         bpy.ops.object.mode_set(mode='OBJECT')
-        name = "panel_preset_index"
+        name = ATTRIBUTE_NAME
         if target.find(name) < 0:
             attrib = target.new(name, 'INT', 'FACE')
         else:
@@ -227,7 +228,7 @@ class PANELS_OP_SelectFacesFromPreset(bpy.types.Operator):
         for obj in targets:
             mesh = obj.data
             bm = bmesh.from_edit_mesh(mesh)
-            attrib = bm.faces.layers.int.get('panel_preset_index')
+            attrib = bm.faces.layers.int.get(ATTRIBUTE_NAME)
             if attrib is None:
                 continue
 
@@ -260,7 +261,7 @@ class PANELS_OP_SelectPresetFromFace(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(mesh)
         target_id = -1
 
-        attrib = bm.faces.layers.int.get('panel_preset_index')
+        attrib = bm.faces.layers.int.get(ATTRIBUTE_NAME)
         if attrib is None:
             self.report({'ERROR'}, "No presets assigned to this obj")
             return {'CANCELLED'}
@@ -449,3 +450,99 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
         bpy.ops.transform.translate('INVOKE_DEFAULT')
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
+
+
+# Preset-binding operators
+class PANELS_OP_MarkAsOrigin(bpy.types.Operator):
+    """Marks this object as a Preset Origin by simply adding original_transform property"""
+    bl_label = "Mark as Preset Origin"
+    bl_idname = "panels.mark_origin"
+
+    @classmethod
+    def poll(cls, context):
+        return context.object
+
+    def execute(self, context):
+        obj = context.object
+        obj.rotation_mode = 'QUATERNION'
+        if obj.type == 'EMPTY':
+            obj.empty_display_type = 'SPHERE'
+        obj.lock_scale = [True, True, True]
+
+        obj.origin_transform.from_obj(obj)
+        return {'FINISHED'}
+
+
+class PANELS_OP_UpdateTransform(bpy.types.Operator):
+    """"""
+    bl_label = "Update Transform from Origin"
+    bl_idname = "panels.update_transform"
+
+    @classmethod
+    def poll(cls, context):
+        return context.object and context.mode == "OBJECT"
+
+    def execute(self, context):
+        obj = context.object
+        tr = obj.origin_transform
+        if tr.scale == Vector((0.0, 0.0, 0.0)):
+            self.report({'ERROR'}, "This object was not initialized as Preset Origin")
+
+        if len(obj.children) == 0:
+            self.report({'ERROR'}, "No children objects to transform")
+
+        # Calculate transform deltas and create delta matrix
+        # For some reason, rotation only works consistently from
+        # (1, 0, 0, 0) quaternion and world origin position at (0, 0, 0)
+        # We need to reverse location and rotation adjustment
+        # before doing any changes.
+        # It's not the most elegant solution, but it works
+        loc_delta = Matrix.Translation(obj.location)
+        loc_delta_reverse = Matrix.Translation(Vector((0.0, 0.0, 0.0)) - tr.location)
+
+        origin_quaternion: Quaternion = tr.rotation
+        current_rotation = obj.rotation_quaternion
+        ref_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
+        rot_delta_reverse = origin_quaternion.rotation_difference(ref_quaternion).to_matrix()
+        rot_delta = ref_quaternion.rotation_difference(current_rotation).to_matrix()
+
+        # get all presets used in this hierarchy
+        children = obj.children
+        attrib_array = np.zeros((1), int)
+        attrib_unique = np.zeros((1), int)
+        for child in children:
+            attrib = child.data.attributes.get(ATTRIBUTE_NAME)
+            if attrib:
+                attrib_array.resize((len(attrib.data)))
+                attrib.data.foreach_get('value', attrib_array)
+                attrib_unique = np.union1d(attrib_array, attrib_unique)
+
+        # transform used presets
+        all_presets = context.scene.panel_manager.presets
+        presets = [all_presets[i] for i in attrib_unique]
+
+        position = ['position_2d', 'position_3d']
+        direction = ['tile_direction_3d', 'plane_normal']
+        for preset in presets:
+            for layer in preset.layers:
+                if layer.panel_type.find('UV') != -1:
+                    continue
+
+                for attribute in position:
+                    cur_attr = getattr(layer, attribute)
+                    cur_attr = loc_delta_reverse @ cur_attr
+                    cur_attr = rot_delta_reverse @ cur_attr
+                    cur_attr = rot_delta @ cur_attr
+                    cur_attr = loc_delta @ cur_attr
+                    setattr(layer, attribute, cur_attr)
+
+                for attribute in direction:
+                    cur_attr = getattr(layer, attribute)
+                    cur_attr = rot_delta_reverse @ cur_attr
+                    cur_attr = rot_delta @ cur_attr
+                    setattr(layer, attribute, cur_attr)
+
+        context.scene.panel_manager.write_image()
+        obj.origin_transform.from_obj(obj)
+
+        return {'FINISHED'}

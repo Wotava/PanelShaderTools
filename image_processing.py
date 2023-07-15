@@ -7,7 +7,7 @@ from mathutils import Vector
 from math import pi
 from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, check_mask, \
     ultra_generic_packer, encode_by_rule
-from .utils import get_rotator
+from .utils import get_rotator, Transform
 
 MAX_LAYERS = 8
 PIXELS_PER_LAYER = 2
@@ -20,7 +20,8 @@ def auto_update(self, context) -> None:
         manager.write_preset(manager.active_preset_index)
         # force-update all visible objects to reflect changes
         for obj in context.visible_objects:
-            obj.data.update()
+            if obj.type == 'MESH':
+                obj.data.update()
 
 
 GLOBAL_RULESET = {
@@ -245,6 +246,10 @@ class PanelLayer(bpy.types.PropertyGroup):
         description="If false, this layer will be skipped when writing to image",
         update=auto_update,
         default=True
+    )
+    anchor_transform: bpy.props.PointerProperty(
+        type=Transform,
+        name="Transform Reference"
     )
 
     # This dictionary defines which values are used for UI and packing

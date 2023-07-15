@@ -1,18 +1,18 @@
 if "bpy" in locals():
     import importlib
+    importlib.reload(utils)
     importlib.reload(image_processing)
     importlib.reload(ui)
     importlib.reload(operators)
     importlib.reload(bit_encoding)
-    importlib.reload(utils  )
     print("[SHTOOLS] Addon reload")
 else:
     import bpy
+    from . import utils
     from . import image_processing
     from . import ui
     from . import operators
     from . import bit_encoding
-    from . import utils
 
 
 bl_info = {
@@ -26,6 +26,7 @@ bl_info = {
 }
 
 classes = [
+    utils.Transform,
     image_processing.PanelLayer,
     image_processing.LayerPreset,
     image_processing.AddonPresetStorage,
@@ -46,16 +47,20 @@ classes = [
     operators.PANELS_OP_SelectPresetFromFace,
     operators.PANELS_OP_BakePresets,
     operators.PANELS_OP_AdjustImage,
-    operators.PANELS_OP_DefinePlaneNormal
+    operators.PANELS_OP_DefinePlaneNormal,
+    operators.PANELS_OP_MarkAsOrigin,
+    operators.PANELS_OP_UpdateTransform
 ]
 
 
 def register():
     print(bit_encoding.verbose)
     print(utils.verbose)
+    bpy.context.preferences.use_preferences_save = True
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.panel_manager = bpy.props.PointerProperty(type=image_processing.LayerManager)
+    bpy.types.Object.origin_transform = bpy.props.PointerProperty(type=utils.Transform)
 
 
 def unregister():
