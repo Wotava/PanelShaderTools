@@ -76,16 +76,28 @@ class DATA_PT_PanelShader(bpy.types.Panel):
         # Active preset index is stored in scene panel manager
         manager: LayerManager = context.scene.panel_manager
         # Presets are stored in addon's preferences
-        addon_prefs = context.preferences.addons[__package__].preferences
+        preset_storage = manager.preset_storage
 
         row = layout.row()
-        row.template_list("DATA_UL_PanelPreset", "", addon_prefs, "presets", manager,
+        row.prop(manager, "storage_type", expand=True)
+
+        row = layout.row()
+        row.template_list("DATA_UL_PanelPreset", "", preset_storage, "panel_presets", manager,
                           "active_preset_index")
         col = row.column(align=True)
         col.operator("panels.add_preset", icon='ADD', text="")
         col.operator("panels.remove_preset", icon='REMOVE', text="")
         col.separator()
         col.operator("panels.duplicate_preset", icon='DUPLICATE', text="")
+
+        if manager.storage_type == 'SCENE':
+            row = layout.row()
+            if len(manager.presets) == 0:
+                op = row.operator("panels.storage_io", text="Read Presets from Addon", icon='FILE')
+                op.action_type = 'READ_PREF_TO_SCENE'
+            else:
+                op = row.operator("panels.storage_io", text="Write Presets to Addon", icon='FILE_TICK')
+                op.action_type = 'WRITE_SCENE_TO_PREF'
 
         # Display layer props
         if len(manager.presets) > 0:

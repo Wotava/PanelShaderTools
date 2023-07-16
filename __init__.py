@@ -49,7 +49,8 @@ classes = [
     operators.PANELS_OP_AdjustImage,
     operators.PANELS_OP_DefinePlaneNormal,
     operators.PANELS_OP_MarkAsOrigin,
-    operators.PANELS_OP_UpdateTransform
+    operators.PANELS_OP_UpdateTransform,
+    operators.PANELS_OP_StorageIO
 ]
 
 

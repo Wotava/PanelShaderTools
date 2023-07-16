@@ -61,11 +61,11 @@ class PANELS_OP_RemovePreset(bpy.types.Operator):
     def execute(self, context):
         if context.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
-
-        bpy.ops.ed.undo_push()
-        context.scene.panel_manager.remove_preset(destroy=self.destructive)
-        context.scene.panel_manager.clean_image()
-        bpy.ops.panels.bake_presets()
+        manager = context.scene.panel_manager
+        manager.remove_preset(destroy=self.destructive)
+        if context.scene.panel_manager.target_image:
+            manager.clean_image()
+            manager.write_image()
         return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -82,8 +82,12 @@ class PANELS_OP_AddLayer(bpy.types.Operator):
         return len(context.scene.panel_manager.active_preset.layers) < context.scene.panel_manager.max_layers
 
     def execute(self, context):
-        context.scene.panel_manager.active_preset.add_layer()
-        bpy.ops.panels.bake_presets()
+        manager = context.scene.panel_manager
+        manager.active_preset.add_layer()
+        if manager.target_image:
+            manager.write_image()
+        else:
+            self.report({'INFO'}, "No target image provided")
         update_objects(context.visible_objects)
         return {'FINISHED'}
 
@@ -98,8 +102,12 @@ class PANELS_OP_RemoveLayer(bpy.types.Operator):
         return len(context.scene.panel_manager.active_preset.layers) > 0
 
     def execute(self, context):
-        context.scene.panel_manager.active_preset.remove_layer()
-        bpy.ops.panels.bake_presets()
+        manager = context.scene.panel_manager
+        manager.active_preset.remove_layer()
+        if manager.target_image:
+            manager.write_image()
+        else:
+            self.report({'INFO'}, "No target image provided")
         update_objects(context.visible_objects)
         return {'FINISHED'}
 
@@ -137,7 +145,12 @@ class PANELS_OP_MoveLayer(bpy.types.Operator):
 
         active_preset.layers.move(current_index, target_index)
         active_preset.active_layer_index = target_index
-        manager.write_image()
+
+        if manager.target_image:
+            manager.write_image()
+        else:
+            self.report({'INFO'}, "No target image provided")
+
         update_objects(context.visible_objects)
         return {'FINISHED'}
 
@@ -160,7 +173,12 @@ class PANELS_OP_DuplicateLayer(bpy.types.Operator):
         new_layer.match(current_layer)
 
         active_preset.active_layer_index = len(active_preset.layers) - 1
-        manager.write_image()
+
+        if manager.target_image:
+            manager.write_image()
+        else:
+            self.report({'INFO'}, "No target image provided")
+
         update_objects(context.visible_objects)
         return {'FINISHED'}
 
@@ -460,7 +478,7 @@ class PANELS_OP_MarkAsOrigin(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.object
+        return context.object and len(context.selected_objects) > 0
 
     def execute(self, context):
         obj = context.object
@@ -480,7 +498,7 @@ class PANELS_OP_UpdateTransform(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.object and context.mode == "OBJECT"
+        return context.object and context.mode == "OBJECT" and len(context.selected_objects) > 0
 
     def execute(self, context):
         obj = context.object
@@ -544,5 +562,42 @@ class PANELS_OP_UpdateTransform(bpy.types.Operator):
 
         context.scene.panel_manager.write_image()
         obj.origin_transform.from_obj(obj)
+
+        return {'FINISHED'}
+
+
+class PANELS_OP_StorageIO(bpy.types.Operator):
+    """"""
+    bl_label = "Storage IO"
+    bl_idname = "panels.storage_io"
+
+    action_type: bpy.props.EnumProperty(
+        name="Action",
+        description="",
+        items=[
+            ('READ_PREF_TO_SCENE', 'Load Prefs to Scene', 'Copy Presets from Addon Preferences to Scene'),
+            ('WRITE_SCENE_TO_PREF', 'Write Scene to Prefs', 'Write Scene Presets to Addon Preferences'),
+        ],
+        default='READ_PREF_TO_SCENE',
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return True
+
+    def execute(self, context):
+        manager = context.scene.panel_manager
+        pref_storage = context.preferences.addons[__package__].preferences.panel_presets
+        scene_storage = manager.panel_presets
+        if self.action_type == 'READ_PREF_TO_SCENE':
+            scene_storage.clear()
+            for preset in pref_storage:
+                local_new = scene_storage.add()
+                local_new.match(preset, name_postfix=False)
+        elif self.action_type == 'WRITE_SCENE_TO_PREF':
+            pref_storage.clear()
+            for preset in scene_storage:
+                local_new = pref_storage.add()
+                local_new.match(preset, name_postfix=False)
 
         return {'FINISHED'}

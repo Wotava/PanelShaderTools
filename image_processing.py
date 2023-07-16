@@ -494,12 +494,16 @@ class LayerPreset(bpy.types.PropertyGroup):
         pixels.extend([0] * (target_length - len(pixels)))
         return pixels
 
-    def match(self, target: 'LayerPreset'):
+    def match(self, target: 'LayerPreset', name_postfix=True):
         """Copies all layers from target"""
         target_len = len(target.layers)
         for i in range(0, target_len):
             self.add_layer(target.layers[i])
-        self.name = target.name + " copy"
+
+        self.name = target.name
+        if name_postfix:
+            self.name += " copy"
+
         self.active_layer_index = target.active_layer_index
 
     def clean(self):
@@ -536,9 +540,9 @@ class AddonPresetStorage(bpy.types.AddonPreferences):
     """Addon preferences container. This class acts like a storage for all panel presets."""
     bl_idname = __package__
 
-    presets: bpy.props.CollectionProperty(
+    panel_presets: bpy.props.CollectionProperty(
         type=LayerPreset,
-        name="Scene Presets",
+        name="Shared Presets",
         description="All Panel Presets"
     )
 
@@ -551,15 +555,31 @@ class LayerManager(bpy.types.PropertyGroup):
 
     @property
     def presets(self):
-        preferences = bpy.context.preferences
-        addon_prefs = preferences.addons[__package__].preferences
-        return addon_prefs.presets
+        if self.use_scene_storage:
+            return self.panel_presets
+        else:
+            preferences = bpy.context.preferences
+            addon_prefs = preferences.addons[__package__].preferences
+            return addon_prefs.panel_presets
+
+    @property
+    def preset_storage(self):
+        if self.use_scene_storage:
+            return self
+        else:
+            preferences = bpy.context.preferences
+            return preferences.addons[__package__].preferences
 
     @property
     def active_preset(self) -> LayerPreset:
         """Returns a ref to the active preset"""
         return self.presets[self.active_preset_index]
 
+    panel_presets: bpy.props.CollectionProperty(
+        type=LayerPreset,
+        name="Scene Presets",
+        description="Local copy of Panel Presets"
+    )
     active_preset_index: bpy.props.IntProperty(
         name="Active Preset Index",
         default=0
@@ -581,6 +601,27 @@ class LayerManager(bpy.types.PropertyGroup):
         name="Update Offset on Normal-set",
         description="Enables auto update of plane offset to match selected target vertices when setting panel normal",
         default=True
+    )
+    use_scene_storage: bpy.props.BoolProperty(
+        name="Use Scene Storage",
+        description="Use Scene as preset storage instead of addon preferences. Enabled by default, by disabling it"
+                    "you write directly to shared presets but lose the ability to use undo on them",
+        default=True
+    )
+
+    def flip_storage(self, context):
+        self.use_scene_storage = self.storage_type == 'SCENE'
+
+    storage_type: bpy.props.EnumProperty(
+        name="Current Storage",
+        description="Enum property for UI display",
+        items=[
+            ('SCENE', 'Scene Storage', 'All Presets are stored inside the Scene, undo will work but requires manual'
+                                       ' cross-scene saving'),
+            ('ADDON', 'Addon Storage', 'All Presets are stored inside Addon Preferences, undo won\'t work'),
+        ],
+        default='SCENE',
+        update=flip_storage
     )
 
     def new_preset(self):
@@ -721,16 +762,23 @@ class LayerManager(bpy.types.PropertyGroup):
         col.template_ID(self, "target_image", new="image.new", open="image.open")
         if self.target_image:
             self.check_image(layout)
-        layout.row().operator("panels.bake_presets")
-        layout.row().operator("panels.assign_preset")
+        row = layout.row(align=True)
+        row.operator("panels.bake_presets", icon='SHADING_RENDERED')
+        row.operator("panels.assign_preset", icon='FACESEL')
 
         row = layout.row(align=True)
-        row.operator("panels.select_by_preset")
-        op = row.operator("panels.select_by_face")
+        row.operator("panels.select_by_preset", icon='PRESET')
+        op = row.operator("panels.select_by_face", icon='RESTRICT_SELECT_OFF')
         op.call_edit = False
-        op = row.operator("panels.select_by_face", text="E")
+        op = row.operator("panels.select_by_face", text="Edit Preset from Face", icon='EDITMODE_HLT')
         op.call_edit = True
-        layout.row().prop(self, "use_auto_update", icon='FILE_REFRESH')
-        layout.row().prop(self, "use_auto_offset", icon='MOD_LENGTH')
+
+        row = layout.row(align=True)
+        row.operator("panels.mark_origin", icon="OBJECT_ORIGIN")
+        row.operator("panels.update_transform", icon="DRIVER_TRANSFORM")
+
+        row = layout.row(align=True)
+        row.prop(self, "use_auto_update", icon='FILE_REFRESH')
+        row.prop(self, "use_auto_offset", icon='MOD_LENGTH')
 
         self.active_preset.draw_panel(layout)
