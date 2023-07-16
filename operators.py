@@ -407,7 +407,9 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
                     selection.append(elem.co)
                     if len(selection) == 2:
                         break
-
+            if len(selection) < 2:
+                self.report({'ERROR'}, "Not enough data for selection. Maybe you have non-mesh selection?")
+                return {'CANCELLED'}
             target_location: Vector = (selection[0] - selection[1])
             target_location.normalize()
             setattr(target_layer, self.target, target_location)
@@ -416,11 +418,7 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
                 target_vert_co = selection[0]
 
                 target_vert_co = world_matrix @ target_vert_co
-                x = target_vert_co.dot(target_layer.plane_normal)
-                y = target_layer.plane_dist_A + target_layer.plane_dist_B
-                target_layer.plane_offset = (x % y) / y
-                if target_layer.plane_normal.z >= 0:
-                    target_layer.plane_offset = 1 - target_layer.plane_offset
+                target_layer.plane_offset_internal = target_vert_co
                 self.report({"INFO"}, f"{self.target} value set with auto-offset, operator exit")
             else:
                 self.report({"INFO"}, f"{self.target} value set as normal, operator exit")
@@ -516,9 +514,11 @@ class PANELS_OP_UpdateTransform(bpy.types.Operator):
         tr = obj.origin_transform
         if tr.scale == Vector((0.0, 0.0, 0.0)):
             self.report({'ERROR'}, "This object was not initialized as Preset Origin")
+            return {'CANCELLED'}
 
         if len(obj.children) == 0:
             self.report({'ERROR'}, "No children objects to transform")
+            return {'CANCELLED'}
 
         # Calculate transform deltas and create delta matrix
         # For some reason, rotation only works consistently from
@@ -550,12 +550,18 @@ class PANELS_OP_UpdateTransform(bpy.types.Operator):
         all_presets = context.scene.panel_manager.presets
         presets = [all_presets[i] for i in attrib_unique]
 
-        position = ['position_2d', 'position_3d']
+        position = ['position_2d', 'position_3d', 'plane_offset_internal']
         direction = ['tile_direction_3d', 'plane_normal']
         for preset in presets:
             for layer in preset.layers:
                 if layer.panel_type.find('UV') != -1:
                     continue
+
+                for attribute in direction:
+                    cur_attr = getattr(layer, attribute)
+                    cur_attr = rot_delta_reverse @ cur_attr
+                    cur_attr = rot_delta @ cur_attr
+                    setattr(layer, attribute, cur_attr)
 
                 for attribute in position:
                     cur_attr = getattr(layer, attribute)
@@ -565,11 +571,6 @@ class PANELS_OP_UpdateTransform(bpy.types.Operator):
                     cur_attr = loc_delta @ cur_attr
                     setattr(layer, attribute, cur_attr)
 
-                for attribute in direction:
-                    cur_attr = getattr(layer, attribute)
-                    cur_attr = rot_delta_reverse @ cur_attr
-                    cur_attr = rot_delta @ cur_attr
-                    setattr(layer, attribute, cur_attr)
 
         context.scene.panel_manager.write_image()
         obj.origin_transform.from_obj(obj)

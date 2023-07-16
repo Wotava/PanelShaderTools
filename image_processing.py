@@ -69,6 +69,14 @@ GLOBAL_RULESET = {
 
 
 class PanelLayer(bpy.types.PropertyGroup):
+    def recalc_offset(self, context):
+        target_co = Vector(self.plane_offset_internal)
+        x = target_co.dot(self.plane_normal)
+        y = self.plane_dist_A + self.plane_dist_B
+        self.plane_offset = (x % y) / y
+        if self.plane_normal.z >= 0:
+            self.plane_offset = 1 - self.plane_offset
+
     # Mandatory
     plane_normal: bpy.props.FloatVectorProperty(
         name="Plane Normal",
@@ -84,6 +92,12 @@ class PanelLayer(bpy.types.PropertyGroup):
         max=1.0,
         update=auto_update,
         default=0
+    )
+    plane_offset_internal: bpy.props.FloatVectorProperty(
+        name="Offset Internal",
+        subtype='TRANSLATION',
+        update=recalc_offset,
+        default=[0.0, 0.0, 0.0]
     )
     plane_dist_A: bpy.props.FloatProperty(
         name="Plane Distance A",
@@ -246,10 +260,6 @@ class PanelLayer(bpy.types.PropertyGroup):
         description="If false, this layer will be skipped when writing to image",
         update=auto_update,
         default=True
-    )
-    anchor_transform: bpy.props.PointerProperty(
-        type=Transform,
-        name="Transform Reference"
     )
 
     # This dictionary defines which values are used for UI and packing
