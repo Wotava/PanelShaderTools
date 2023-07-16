@@ -32,6 +32,7 @@ class PANELS_OP_AddPreset(bpy.types.Operator):
     """Adds new panel preset, used in UI"""
     bl_label = "Add Panel Preset"
     bl_idname = "panels.add_preset"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -46,6 +47,7 @@ class PANELS_OP_RemovePreset(bpy.types.Operator):
     """Resets selected preset to defaults or deletes them completely if prompted"""
     bl_label = "Remove Panel Preset"
     bl_idname = "panels.remove_preset"
+    bl_options = {'REGISTER', 'UNDO'}
 
     destructive: bpy.props.BoolProperty(
         name="Delete from Stack",
@@ -76,6 +78,7 @@ class PANELS_OP_AddLayer(bpy.types.Operator):
     """Adds new layer to active preset, used in UI"""
     bl_label = "Add Preset Layer"
     bl_idname = "panels.add_layer"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -96,6 +99,7 @@ class PANELS_OP_RemoveLayer(bpy.types.Operator):
     """Removes active layer from active preset, used in UI"""
     bl_label = "Remove Preset Layer"
     bl_idname = "panels.remove_layer"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -116,6 +120,7 @@ class PANELS_OP_MoveLayer(bpy.types.Operator):
     """Moves active layer in stack"""
     bl_label = "Move Preset Layer"
     bl_idname = "panels.move_layer"
+    bl_options = {'REGISTER', 'UNDO'}
 
     move_up: bpy.props.BoolProperty(
         name="Move Selection Up",
@@ -159,6 +164,7 @@ class PANELS_OP_DuplicateLayer(bpy.types.Operator):
     """Duplicates active layer"""
     bl_label = "Duplicate Preset Layer"
     bl_idname = "panels.duplicate_layer"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -331,6 +337,7 @@ class PANELS_OP_DuplicatePreset(bpy.types.Operator):
     """Duplicates active preset and all its layers"""
     bl_label = "Duplicate Preset"
     bl_idname = "panels.duplicate_preset"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -359,6 +366,7 @@ class PANELS_OP_AdjustImage(bpy.types.Operator):
     """Adjusts image parameters"""
     bl_label = "Adjust Target Image"
     bl_idname = "panels.adjust_image"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -374,6 +382,7 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
     """Define plane normal for a layer by selecting either an edge or two vertices"""
     bl_label = "Define Plane Normal"
     bl_idname = "panels.define_plane_normal"
+    bl_options = {'REGISTER', 'UNDO'}
 
     target: bpy.props.StringProperty(
         name="Property to Set",
@@ -475,6 +484,7 @@ class PANELS_OP_MarkAsOrigin(bpy.types.Operator):
     """Marks this object as a Preset Origin by simply adding original_transform property"""
     bl_label = "Mark as Preset Origin"
     bl_idname = "panels.mark_origin"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -495,6 +505,7 @@ class PANELS_OP_UpdateTransform(bpy.types.Operator):
     """"""
     bl_label = "Update Transform from Origin"
     bl_idname = "panels.update_transform"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -570,6 +581,7 @@ class PANELS_OP_StorageIO(bpy.types.Operator):
     """"""
     bl_label = "Storage IO"
     bl_idname = "panels.storage_io"
+    bl_options = {'REGISTER', 'UNDO'}
 
     action_type: bpy.props.EnumProperty(
         name="Action",
