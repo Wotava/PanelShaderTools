@@ -55,7 +55,7 @@ GLOBAL_RULESET = {
     "tile_dir_yaw": dict(type="float", min_value=-pi, max_value=pi, raw=False, bits=25),
     "tile_dir_pitch": dict(type="float", min_value=(-pi / 2), max_value=(pi / 2), raw=False, bits=23),
 
-    "fan_divisions": dict(type="int", min_value=2, max_value=64, raw=True, bits=6),
+    "fan_divisions": dict(type="int", min_value=2, max_value=63, raw=True, bits=6),
     "angle_offset": dict(type="float", min_value=0, max_value=(pi / 2), raw=False, bits=12),
     "remap_angular": dict(type="float", min_value=0, max_value=(pi / 2), raw=False, bits=12),
 
@@ -161,7 +161,7 @@ class PanelLayer(bpy.types.PropertyGroup):
     fan_divisions: bpy.props.IntProperty(
         name="Fan Divisions",
         min=2,
-        max=64,
+        max=63,
         update=auto_update,
         default=0
     )
@@ -534,10 +534,10 @@ class LayerPreset(bpy.types.PropertyGroup):
         col.operator("panels.duplicate_layer", icon='DUPLICATE', text="")
         col.separator()
 
-        if len(self.layers) > 2 and self.active_layer_index > 0:
+        if len(self.layers) > 1 and self.active_layer_index > 0:
             op = col.operator("panels.move_layer", icon='TRIA_UP', text="")
             op.move_up = True
-        if len(self.layers) > 2 and self.active_layer_index < (len(self.layers) - 1):
+        if len(self.layers) > 1 and self.active_layer_index < (len(self.layers) - 1):
             op = col.operator("panels.move_layer", icon='TRIA_DOWN', text="")
             op.move_up = False
 
