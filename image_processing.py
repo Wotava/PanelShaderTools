@@ -18,10 +18,6 @@ def auto_update(self, context) -> None:
     if context.scene.panel_manager.use_auto_update:
         manager: LayerManager = context.scene.panel_manager
         manager.write_preset(manager.active_preset_index)
-        # force-update all visible objects to reflect changes
-        for obj in context.visible_objects:
-            if obj.type == 'MESH':
-                obj.data.update()
 
 
 GLOBAL_RULESET = {

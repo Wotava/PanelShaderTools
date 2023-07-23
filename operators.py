@@ -40,6 +40,7 @@ class PANELS_OP_AddPreset(bpy.types.Operator):
 
     def execute(self, context):
         context.scene.panel_manager.new_preset()
+        update_objects(context.visible_objects)
         return {'FINISHED'}
 
 
@@ -68,6 +69,7 @@ class PANELS_OP_RemovePreset(bpy.types.Operator):
         if context.scene.panel_manager.target_image:
             manager.clean_image()
             manager.write_image()
+        update_objects(context.visible_objects)
         return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -359,6 +361,7 @@ class PANELS_OP_BakePresets(bpy.types.Operator):
 
     def execute(self, context):
         context.scene.panel_manager.write_image()
+        update_objects(context.visible_objects)
         return {'FINISHED'}
 
 
