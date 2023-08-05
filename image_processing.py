@@ -484,10 +484,10 @@ class LayerPreset(bpy.types.PropertyGroup):
     def remove_layer(self, index: int = -1):
         if index > -1:
             self.layers.remove(index)
-            if self.active_layer_index > 0:
-                self.active_layer_index -= 1
         else:
             self.layers.remove(self.active_layer_index)
+        if self.active_layer_index > 0:
+            self.active_layer_index -= 1
 
     def get_pixel_strip(self) -> [float]:
         """Returns a list of floats to compose a pixel from. List is filled with empty values until it matches the
@@ -643,6 +643,9 @@ class LayerManager(bpy.types.PropertyGroup):
         else:
             target = self.active_preset_index
 
+        if self.active_preset_index > 0:
+            self.active_preset_index -= 1
+
         if destroy:
             attrib_array = np.zeros((1), int)
             for obj in bpy.data.objects:
@@ -663,9 +666,6 @@ class LayerManager(bpy.types.PropertyGroup):
             self.presets.remove(target)
         else:
             self.presets[target].clean()
-
-        if self.active_preset_index > 0:
-            self.active_preset_index -= 1
 
     def duplicate_preset(self, index: int = None):
         """Duplicate preset at the given index"""
