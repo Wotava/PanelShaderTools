@@ -200,30 +200,37 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         return context.object and context.object.type == 'MESH' \
-            and context.mode == 'EDIT_MESH' and context.object.data.total_face_sel > 0
+            and (context.mode == 'EDIT_MESH' and context.object.data.total_face_sel > 0 or context.mode == 'OBJECT')
 
     def execute(self, context):
-        target = context.object.data.attributes
         active_preset_index = context.scene.panel_manager.active_preset_index
 
-        bm = bmesh.from_edit_mesh(context.object.data)
-        selected = [f.index for f in bm.faces if f.select]
+        for obj in context.selected_objects:
+            target = obj.data.attributes
 
-        # A hacky way of writing attributes and getting selected faces
-        # from OBJECT mode because in EDIT attribute data is empty
-        bpy.ops.object.mode_set(mode='OBJECT')
-        name = ATTRIBUTE_NAME
-        if target.find(name) < 0:
-            attrib = target.new(name, 'INT', 'FACE')
-        else:
-            attrib = target[target.find(name)]
-        attrib_data = attrib.data.values()
-        for index in selected:
-            attrib_data[index].value = active_preset_index
+            if context.mode == 'EDIT_MESH':
+                bm = bmesh.from_edit_mesh(obj.data)
+                selected = [f.index for f in bm.faces if f.select]
+            else:
+                bm = bmesh.new()
+                bm.from_mesh(obj.data)
+                selected = [f.index for f in bm.faces]
 
-        self.report({'INFO'}, f"Set preset {active_preset_index} on {len(selected)} faces")
-        bm.free()
-        bpy.ops.object.mode_set(mode='EDIT')
+            # A hacky way of writing attributes and getting selected faces
+            # from OBJECT mode because in EDIT attribute data is empty
+            bpy.ops.object.mode_set(mode='OBJECT')
+            name = ATTRIBUTE_NAME
+            if target.find(name) < 0:
+                attrib = target.new(name, 'INT', 'FACE')
+            else:
+                attrib = target[target.find(name)]
+            attrib_data = attrib.data.values()
+            for index in selected:
+                attrib_data[index].value = active_preset_index
+
+            self.report({'INFO'}, f"Set preset {active_preset_index} on {len(selected)} faces")
+            bm.free()
+            bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
 
 
