@@ -204,32 +204,60 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
 
     def execute(self, context):
         active_preset_index = context.scene.panel_manager.active_preset_index
+        start_mode = context.mode
+        # Do everything in object mode, because writing UVs crashes Blender on large objects
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Ensure we have all the necessary UV maps in the right order
+        target_uv_names = ['UVMap', 'UVMap_Aligned', 'UVMap_SlopePreset', 'UVMap_Inset']
+        target_preset_uv = 2
+        for obj in context.selected_objects:
+            if len(obj.data.uv_layers) < 4:
+                for layer in target_uv_names[len(obj.data.uv_layers):]:
+                    obj.data.uv_layers.new().name = layer
 
         for obj in context.selected_objects:
             target = obj.data.attributes
 
-            if context.mode == 'EDIT_MESH':
-                bm = bmesh.from_edit_mesh(obj.data)
-                selected = [f.index for f in bm.faces if f.select]
+            if start_mode == 'OBJECT':
+                selected = [f.index for f in obj.data.polygons]
             else:
-                bm = bmesh.new()
-                bm.from_mesh(obj.data)
-                selected = [f.index for f in bm.faces]
+                selected = [f.index for f in obj.data.polygons if f.select]
 
-            # A hacky way of writing attributes and getting selected faces
-            # from OBJECT mode because in EDIT attribute data is empty
-            bpy.ops.object.mode_set(mode='OBJECT')
+            uv_layer = obj.data.uv_layers[target_preset_uv]
+
             name = ATTRIBUTE_NAME
             if target.find(name) < 0:
                 attrib = target.new(name, 'INT', 'FACE')
             else:
                 attrib = target[target.find(name)]
-            attrib_data = attrib.data.values()
-            for index in selected:
-                attrib_data[index].value = active_preset_index
 
+            # Process everything through separate lists to avoid slowdowns and segfaults
+            attributes = np.zeros((len(attrib.data.values())), dtype=int)
+            attrib.data.foreach_get("value", attributes)
+            for i in range(len(attributes)):
+                if i in selected:
+                    attributes[i] = active_preset_index
+            attrib.data.foreach_set("value", attributes)
+
+            uv_all = np.zeros((len(uv_layer.data) * 2))
+            uv_layer.data.foreach_get("uv", uv_all)
+
+            # get a list of selected
+            if start_mode == 'OBJECT':
+                target_loops = [[*x.loop_indices] for x in obj.data.polygons]
+            else:
+                target_loops = [[*x.loop_indices] for x in obj.data.polygons if x.select]
+
+            target_loops = [y for x in target_loops for y in x]  # extend a list of lists with nested comprehension
+            for i in target_loops:
+                if math.isnan(uv_all[i*2]):
+                    uv_all[i*2] = 0.0
+                uv_all[i*2+1] = float(active_preset_index)
+            uv_layer.data.foreach_set("uv", uv_all)
             self.report({'INFO'}, f"Set preset {active_preset_index} on {len(selected)} faces")
-            bm.free()
+
+        if start_mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
 
