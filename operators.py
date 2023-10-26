@@ -97,7 +97,8 @@ class PANELS_OP_AddLayer(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.active_preset.layers) < context.scene.panel_manager.max_layers
+        return (context.scene.panel_manager.active_preset
+                and len(context.scene.panel_manager.active_preset.layers) < context.scene.panel_manager.max_layers)
 
     def execute(self, context):
         manager = context.scene.panel_manager
@@ -118,7 +119,7 @@ class PANELS_OP_RemoveLayer(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.active_preset.layers) > 0
+        return context.scene.panel_manager.active_preset and len(context.scene.panel_manager.active_preset.layers) > 0
 
     def execute(self, context):
         manager = context.scene.panel_manager
@@ -144,7 +145,7 @@ class PANELS_OP_MoveLayer(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.active_preset.layers) > 1
+        return context.scene.panel_manager.active_preset and len(context.scene.panel_manager.active_preset.layers) > 1
 
     def execute(self, context):
         manager = context.scene.panel_manager
@@ -183,7 +184,7 @@ class PANELS_OP_DuplicateLayer(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.panel_manager.active_preset.layers) > 0
+        return context.scene.panel_manager.active_preset and len(context.scene.panel_manager.active_preset.layers) > 0
 
     def execute(self, context):
         manager = context.scene.panel_manager

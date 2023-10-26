@@ -461,7 +461,10 @@ class LayerPreset(bpy.types.PropertyGroup):
 
     @property
     def active_layer(self) -> PanelLayer:
-        return self.layers[self.active_layer_index]
+        if self.active_layer_index >= 0:
+            return self.layers[self.active_layer_index]
+        else:
+            return self.layers[0]
 
     active_layer_index: bpy.props.IntProperty(
         name="Active Layer Index",
@@ -579,7 +582,10 @@ class LayerManager(bpy.types.PropertyGroup):
     @property
     def active_preset(self) -> LayerPreset:
         """Returns a ref to the active preset"""
-        return self.presets[self.active_preset_index]
+        if len(self.presets) > 0:
+            return self.presets[self.active_preset_index]
+        else:
+            return None
 
     panel_presets: bpy.props.CollectionProperty(
         type=LayerPreset,
