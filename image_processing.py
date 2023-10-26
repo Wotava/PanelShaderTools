@@ -771,6 +771,7 @@ class LayerManager(bpy.types.PropertyGroup):
         row = layout.row(align=True)
         row.operator("panels.bake_presets", icon='SHADING_RENDERED')
         row.operator("panels.assign_preset", icon='FACESEL')
+        row.operator("panels.write_slope", icon='MOD_SMOOTH')
 
         row = layout.row(align=True)
         row.operator("panels.select_by_preset", icon='PRESET')

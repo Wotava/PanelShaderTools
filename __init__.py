@@ -42,6 +42,7 @@ classes = [
     operators.PANELS_OP_MoveLayer,
     operators.PANELS_OP_DuplicateLayer,
     operators.PANELS_OP_AssignPreset,
+    operators.PANELS_OP_WriteSlope,
     operators.PANELS_OP_DuplicatePreset,
     operators.PANELS_OP_SelectFacesFromPreset,
     operators.PANELS_OP_SelectPresetFromFace,
