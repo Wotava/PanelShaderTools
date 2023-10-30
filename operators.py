@@ -3,9 +3,10 @@ import math
 import bpy
 import bmesh
 from mathutils import Vector, Euler, Matrix, Quaternion
-from . utils import Transform
+from . utils import has_custom_attrib
 import numpy as np
 ATTRIBUTE_NAME = "panel_preset_index"
+ID_ATTRIBUTE_NAME = "panel_preset_id"
 
 
 def update_objects(targets):
@@ -217,9 +218,14 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
             and (context.mode == 'EDIT_MESH' and context.object.data.total_face_sel > 0 or context.mode == 'OBJECT')
 
     def execute(self, context):
-        active_preset_index = context.scene.panel_manager.active_preset_index
-        start_mode = context.mode
+        manager = context.scene.panel_manager
+        active_preset_index = manager.active_preset_index
+        active_preset_id = manager.active_preset.id
+        if active_preset_id == -1:
+            manager.generate_id(manager.active_preset)
+
         # Do everything in object mode, because writing UVs crashes Blender on large objects
+        start_mode = context.mode
         bpy.ops.object.mode_set(mode='OBJECT')
 
         # Ensure we have all the necessary UV maps in the right order
@@ -269,11 +275,121 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
                     uv_all[i*2] = 0.0
                 uv_all[i*2+1] = float(active_preset_index)
             uv_layer.data.foreach_set("uv", uv_all)
+
+            # assign a dictionary as a custom property to hold scene_id = preset_id pairs
+
+            if not has_custom_attrib(obj, ID_ATTRIBUTE_NAME):
+                print("new dict")
+                obj[ID_ATTRIBUTE_NAME] = dict()
+            pair_attribute = obj[ID_ATTRIBUTE_NAME]
+            tdict = pair_attribute.to_dict()
+            tdict[str(active_preset_index)] = active_preset_id
+            print(tdict)
+
+            # Keep only used pairs
+            uniques = np.unique(attributes)
+            for key, value in zip(tdict.keys(), tdict.values()):
+                if int(key) not in uniques:
+                    tdict.pop(key)
+
+            pair_attribute.update(tdict)
+
             self.report({'INFO'}, f"Set preset {active_preset_index} on {len(selected)} faces")
 
         if start_mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
+
+
+class PANELS_OP_ActualizePresets(bpy.types.Operator):
+    """Assign current preset to selected faces"""
+    bl_label = "Actualize Presets"
+    bl_idname = "panels.actualize_presets"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.object
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(icon='ERROR',
+                     text="No objects selected, operator will be run on ALL objects in this file. Proceed?")
+
+    def execute(self, context):
+        manager = context.scene.panel_manager
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        targets = []
+        if len(context.selected_objects) > 0:
+            targets = [x for x in context.selected_objects if x.type == 'MESH']
+
+        if len(targets) == 0:
+            targets = [x for x in bpy.data.objects if x.type == 'MESH']
+
+        for obj in targets:
+            if not has_custom_attrib(obj, ID_ATTRIBUTE_NAME):
+                print(f"No preset pair data found on {obj.name}, skip")
+                continue
+
+            target = obj.data.attributes
+            uv_layer = obj.data.uv_layers['UVMap_SlopePreset']
+
+            name = ATTRIBUTE_NAME
+            if target.find(name) < 0:
+                print(f"No preset data found on {obj.name}, skip")
+                continue
+            else:
+                attrib = target[name]
+
+            preset_pos = np.zeros((len(attrib.data.values())), dtype=int)
+            attrib.data.foreach_get("value", preset_pos)
+
+            preset_uv = np.zeros((len(uv_layer.data) * 2))
+            uv_layer.data.foreach_get("uv", preset_uv)
+
+            # Initialize "new" lists with negative ones, so we can replace unaffected values with original data
+            preset_pos_new = np.full((len(attrib.data.values())), fill_value=-1, dtype=int)
+            preset_uv_new = np.full((len(uv_layer.data) * 2), fill_value=-1.0, dtype=float)
+
+            pair_dict = obj[ID_ATTRIBUTE_NAME].to_dict()
+            for key, value in zip(list(pair_dict.keys()), list(pair_dict.values())):
+                if manager.panel_presets[int(key)].id != value:
+                    new_pos = manager.find_pos_by_id(value)
+                    if new_pos == -1:
+                        # TODO Look for this id in prefs container and copy it if found
+                        pass
+                    print(key, value)
+                    pair_dict.pop(key)
+                    pair_dict[str(new_pos)] = value
+                    preset_pos_new[np.where(preset_pos == int(key))] = new_pos
+                    preset_uv_new[np.where(preset_pos == int(key))] = float(new_pos)
+            obj[ID_ATTRIBUTE_NAME].clear()
+            obj[ID_ATTRIBUTE_NAME].update(pair_dict)
+            # Replace "-1" unaffected values with original data
+            preset_pos_new[preset_pos_new == -1] = preset_pos[preset_pos_new == -1]
+            preset_uv_new[preset_uv_new == -1] = preset_uv[preset_uv_new == -1]
+
+            # Since we write slope mask to the U channel, fill all uneven indices with original values
+            checker = np.tile([True, False], len(uv_layer.data))
+            preset_uv_new[checker] = preset_uv[checker]
+
+            # Actualize data on the mesh
+            attrib.data.foreach_set("value", preset_pos_new)
+            uv_layer.data.foreach_get("uv", preset_uv)
+
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        targets = []
+        if context.selected_objects > 0:
+            targets = [x for x in context.selected_objects if x.type == 'MESH']
+
+        if len(targets) == 0:
+            return context.window_manager.invoke_props_dialog(self)
+        else:
+            self.execute(context)
+            return {'FINISHED'}
 
 
 class PANELS_OP_WriteSlope(bpy.types.Operator):
@@ -768,6 +884,9 @@ class PANELS_OP_StorageIO(bpy.types.Operator):
         items=[
             ('READ_PREF_TO_SCENE', 'Load Prefs to Scene', 'Copy Presets from Addon Preferences to Scene'),
             ('WRITE_SCENE_TO_PREF', 'Write Scene to Prefs', 'Write Scene Presets to Addon Preferences'),
+            ('SYNC_SELECTED', 'Sync Selected', 'Sync selected presets with addon storage'),
+            ('PUSH_FROM_OBJECT', 'Push from Object', 'Push presets used in selected objects to addon storage'),
+            ('PULL_FROM_OBJECT', 'Pull from Object', 'Pull presets used in selected objects from addon storage'),
         ],
         default='READ_PREF_TO_SCENE',
     )
@@ -776,10 +895,26 @@ class PANELS_OP_StorageIO(bpy.types.Operator):
     def poll(cls, context):
         return True
 
+    @classmethod
+    def description(cls, context, props):
+        option = getattr(props, "action_type")
+        if option == 'READ_PREF_TO_SCENE':
+            desc = "Copy All Presets from Addon Preferences to Scene"
+        elif option == 'WRITE_SCENE_TO_PREF':
+            desc = "Write Scene Presets to Addon Preferences"
+        elif option == 'SYNC_SELECTED':
+            desc = "Sync selected preset with addon storage"
+        elif option == 'PUSH_FROM_OBJECT':
+            desc = "Push presets used in selected objects to addon storage"
+        else:
+            desc = "Pull presets used in selected objects from addon storage"
+        return desc
+
     def execute(self, context):
         manager = context.scene.panel_manager
         pref_storage = context.preferences.addons[__package__].preferences.panel_presets
         scene_storage = manager.panel_presets
+
         if self.action_type == 'READ_PREF_TO_SCENE':
             scene_storage.clear()
             for preset in pref_storage:
@@ -790,5 +925,25 @@ class PANELS_OP_StorageIO(bpy.types.Operator):
             for preset in scene_storage:
                 local_new = pref_storage.add()
                 local_new.match(preset, name_postfix=False)
+        elif self.action_type == 'SYNC_SELECTED':
+            if manager.active_preset:
+                manager.sync_preset(manager.active_preset.id)
+        else:
+            if len(context.selected_objects) < 0:
+                self.report({'INFO'}, "No object selected")
+
+            used_presets = []
+            for obj in context.selected_objects:
+                pair_dict = obj[ID_ATTRIBUTE_NAME].to_dict()
+                used_presets.extend(pair_dict.values())
+            used_presets = np.unique(used_presets)
+
+            pull_from_prefs = self.action_type == 'PULL_FROM_OBJECT'
+
+            for preset_id in used_presets:
+                manager.sync_preset(preset_id, pull_from_prefs=pull_from_prefs)
+
+            if pull_from_prefs:
+                bpy.ops.panels.actualize_presets()
 
         return {'FINISHED'}

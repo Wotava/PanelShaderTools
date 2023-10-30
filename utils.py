@@ -87,3 +87,13 @@ def restore_from_rotator(rotator: [float]) -> Vector:
     vec.y = sin(pitch)
     vec.z = xz_len * cos(yaw)
     return vec
+
+
+def has_custom_attrib(target_obj, name):
+    """Returns an attribute with specified domain and data_type."""
+    try:
+        target_obj[name]
+    except KeyError:
+        return False
+    else:
+        return True

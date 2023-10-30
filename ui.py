@@ -21,7 +21,10 @@ class DATA_UL_PanelPreset(bpy.types.UIList):
                 col.label(text="Enter Name")
                 col = row.column(align=True)
                 col.prop(preset, "name", text="", emboss=True, icon="RIGHTARROW")
-                return
+
+            col = row.column(align=True)
+            col.label(text=f"ID: {preset.id}")
+            return
 
         # TODO clean up
         elif self.layout_type == 'GRID':
@@ -89,15 +92,19 @@ class DATA_PT_PanelShader(bpy.types.Panel):
         col.operator("panels.remove_preset", icon='REMOVE', text="")
         col.separator()
         col.operator("panels.duplicate_preset", icon='DUPLICATE', text="")
+        op = col.operator("panels.storage_io", icon='FILE_REFRESH', text="")
+        op.action_type = 'SYNC_SELECTED'
 
-        if manager.storage_type == 'SCENE':
-            row = layout.row()
-            if len(manager.presets) == 0:
-                op = row.operator("panels.storage_io", text="Read Presets from Addon", icon='FILE')
-                op.action_type = 'READ_PREF_TO_SCENE'
-            else:
-                op = row.operator("panels.storage_io", text="Write Presets to Addon", icon='FILE_TICK')
-                op.action_type = 'WRITE_SCENE_TO_PREF'
+        row = layout.row(align=True)
+        op = row.operator("panels.storage_io", text="Read from Addon", icon='FILE')
+        op.action_type = 'READ_PREF_TO_SCENE'
+        op = row.operator("panels.storage_io", text="Write to Addon", icon='FILE_TICK')
+        op.action_type = 'WRITE_SCENE_TO_PREF'
+        row = layout.row(align=True)
+        op = row.operator("panels.storage_io", text="Push Selected", icon='EXPORT')
+        op.action_type = 'PUSH_FROM_OBJECT'
+        op = row.operator("panels.storage_io", text="Pull Selected", icon='IMPORT')
+        op.action_type = 'PULL_FROM_OBJECT'
 
         # Display layer props
         if len(manager.presets) > 0:

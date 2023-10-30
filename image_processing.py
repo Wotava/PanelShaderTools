@@ -8,9 +8,11 @@ from math import pi
 from .bit_encoding import pack_manual, map_float_to_int_range, as_float, as_float_denormalized, check_mask, \
     ultra_generic_packer, encode_by_rule
 from .utils import get_rotator, Transform
+import random
 
 MAX_LAYERS = 8
 PIXELS_PER_LAYER = 2
+ID_MAX = 65535
 verbose = 0
 
 
@@ -447,10 +449,10 @@ class PanelLayer(bpy.types.PropertyGroup):
 
 class LayerPreset(bpy.types.PropertyGroup):
     # This class handles writing layers to images and swapping their order
-    object_ID: bpy.props.IntProperty(
-        name="Owning Object ID",
-        description="Used to determine pixel offset from the start of the image for current object",
-        default=0
+    id: bpy.props.IntProperty(
+        name="Preset ID",
+        description="Used to sync presets between blend files when transferring objects",
+        default=-1
     )
 
     layers: bpy.props.CollectionProperty(
@@ -510,6 +512,7 @@ class LayerPreset(bpy.types.PropertyGroup):
             self.add_layer(target.layers[i])
 
         self.name = target.name
+        self.id = target.id
         if name_postfix:
             self.name += " copy"
 
@@ -636,9 +639,83 @@ class LayerManager(bpy.types.PropertyGroup):
         update=flip_storage
     )
 
+    def generate_id(self, target=None) -> None:
+        """Generate an ID for every preset.
+        ID is unique for both the scene and pref storage.
+        This solution is mediocre and very limited but will work."""
+        preferences = bpy.context.preferences
+        addon_prefs = preferences.addons[__package__].preferences
+
+        existing_id = [x.id for x in self.presets if x.id != -1]
+        existing_id.extend([x.id for x in addon_prefs.panel_presets if x.id != -1])
+        random.seed()
+
+        if target:
+            if type(target) is not list:
+                target = [target]
+        else:
+            target = self.presets
+
+        for preset in target:
+            if preset.id == -1:
+                for _ in range(500):
+                    s = random.randint(0, ID_MAX)
+                    if s not in existing_id:
+                        preset.id = s
+                        existing_id.append(s)
+                        break
+                else:
+                    print("Failed to set a random ID")
+                    break
+        return
+
+    def find_pos_by_id(self, preset_id: int) -> int:
+        for i, preset in enumerate(self.presets):
+            if preset.id == preset_id:
+                return i
+        return -1
+
+    def sync_preset(self, preset_id: int, pull_from_prefs=True):
+        """Syncs provided preset with an addon storage version or vice-versa. If not found, create a copy"""
+        local_presets = self.panel_presets
+        storage_presets = bpy.context.preferences.addons[__package__].preferences.panel_presets
+
+        for preset in local_presets:
+            if preset.id == preset_id:
+                local_copy = preset
+                break
+        else:
+            local_copy = None
+
+        for preset in storage_presets:
+            if preset.id == preset_id:
+                storage_copy = preset
+                break
+        else:
+            storage_copy = None
+
+        if not storage_copy and not local_copy:
+            raise Exception(f"Specified Preset ID {preset_id} not found!")
+
+        if not storage_copy:
+            storage_copy = storage_presets.add()
+            storage_copy.match(local_copy, name_postfix=False)
+            return
+        if not local_copy:
+            local_copy = local_presets.add()
+            local_copy.match(storage_copy, name_postfix=False)
+            return
+
+        if pull_from_prefs:
+            local_copy.match(storage_copy, name_postfix=False)
+        else:
+            storage_copy.match(local_copy, name_postfix=False)
+        return
+
     def new_preset(self):
         """Creates a new panel preset and sets it as active. Returns created LayerPreset object"""
         new_preset = self.presets.add()
+        self.generate_id(new_preset)
         self.active_preset_index = len(self.presets) - 1
         return new_preset
 
