@@ -27,6 +27,7 @@ bl_info = {
 
 classes = [
     utils.Transform,
+    image_processing.IDContainer,
     image_processing.PanelLayer,
     image_processing.LayerPreset,
     image_processing.AddonPresetStorage,

@@ -548,6 +548,15 @@ class LayerPreset(bpy.types.PropertyGroup):
             current_layer.draw_panel(layout, show_operators)
 
 
+class IDContainer(bpy.types.PropertyGroup):
+    # I feel like i'm retarded for doing this
+    value: bpy.props.IntProperty(
+        name="ID",
+        description="",
+        default=-1
+    )
+
+
 class AddonPresetStorage(bpy.types.AddonPreferences):
     """Addon preferences container. This class acts like a storage for all panel presets."""
     bl_idname = __package__
@@ -558,8 +567,29 @@ class AddonPresetStorage(bpy.types.AddonPreferences):
         description="All Panel Presets"
     )
 
+    used_ids: bpy.props.CollectionProperty(
+        type=IDContainer,
+        name="Used IDs",
+        description="All used preset IDs"
+    )
+
     def draw(self, context):
         layout = self.layout
+
+    def get_all_ids(self) -> np.ndarray:
+        vals = np.zeros(len(self.used_ids), dtype=int)
+        self.used_ids.foreach_get('value', vals)
+        return vals
+
+    def add_id(self, new_id: int):
+        n = self.used_ids.add()
+        n.value = new_id
+
+    def remove_id(self, target_id: int):
+        vals = self.get_all_ids()
+        target = np.where(vals == target_id)[0]
+        if len(target) != 0:
+            self.used_ids.remove(target[0])
 
 
 class LayerManager(bpy.types.PropertyGroup):
@@ -639,35 +669,27 @@ class LayerManager(bpy.types.PropertyGroup):
         update=flip_storage
     )
 
-    def generate_id(self, target=None) -> None:
+    def generate_id(self, target) -> int:
         """Generate an ID for every preset.
         ID is unique for both the scene and pref storage.
         This solution is mediocre and very limited but will work."""
         preferences = bpy.context.preferences
         addon_prefs = preferences.addons[__package__].preferences
 
-        existing_id = [x.id for x in self.presets if x.id != -1]
-        existing_id.extend([x.id for x in addon_prefs.panel_presets if x.id != -1])
+        existing_id = addon_prefs.get_all_ids()
         random.seed()
 
-        if target:
-            if type(target) is not list:
-                target = [target]
+        for _ in range(500):
+            s = random.randint(0, ID_MAX)
+            if s not in existing_id:
+                target.id = s
+                addon_prefs.add_id(s)
+                break
         else:
-            target = self.presets
+            print("Failed to set a random ID")
+            return -1
 
-        for preset in target:
-            if preset.id == -1:
-                for _ in range(500):
-                    s = random.randint(0, ID_MAX)
-                    if s not in existing_id:
-                        preset.id = s
-                        existing_id.append(s)
-                        break
-                else:
-                    print("Failed to set a random ID")
-                    break
-        return
+        return target.id
 
     def find_pos_by_id(self, preset_id: int) -> int:
         for i, preset in enumerate(self.presets):
@@ -746,7 +768,11 @@ class LayerManager(bpy.types.PropertyGroup):
                 attrib_array[attrib_array > target] -= 1
                 attrib.foreach_set('value', attrib_array.tolist())
                 obj.data.update()
+            preferences = bpy.context.preferences
+            addon_prefs = preferences.addons[__package__].preferences
+            addon_prefs.remove_id(self.presets[target].id)
             self.presets.remove(target)
+
         else:
             self.presets[target].clean()
 
