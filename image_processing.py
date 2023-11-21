@@ -67,8 +67,8 @@ GLOBAL_RULESET = {
 
 
 class PanelLayer(bpy.types.PropertyGroup):
-    def recalc_offset(self, context):
-        target_co = Vector(self.plane_offset_internal)
+    def recalc_offset(self, offset):
+        target_co = Vector(offset)
         x = target_co.dot(self.plane_normal)
         y = self.plane_dist_A + self.plane_dist_B
         self.plane_offset = (x % y) / y
@@ -90,12 +90,6 @@ class PanelLayer(bpy.types.PropertyGroup):
         max=1.0,
         update=auto_update,
         default=0
-    )
-    plane_offset_internal: bpy.props.FloatVectorProperty(
-        name="Offset Internal",
-        subtype='TRANSLATION',
-        update=recalc_offset,
-        default=[0.0, 0.0, 0.0]
     )
     plane_dist_A: bpy.props.FloatProperty(
         name="Plane Distance A",
@@ -318,6 +312,7 @@ class PanelLayer(bpy.types.PropertyGroup):
                 setattr(self, item, getattr(target, item))
             i += 1
         self.name = target.name + " copy"
+        self.print_values()
 
     def get_values(self) -> []:
         """Returns a list of layer values matching current panel type paired with their names
@@ -508,6 +503,7 @@ class LayerPreset(bpy.types.PropertyGroup):
     def match(self, target: 'LayerPreset', name_postfix=True):
         """Copies all layers from target"""
         target_len = len(target.layers)
+        self.layers.clear()
         for i in range(0, target_len):
             self.add_layer(target.layers[i])
 

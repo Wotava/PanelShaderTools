@@ -712,7 +712,7 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
                 target_vert_co = selection[0]
 
                 target_vert_co = world_matrix @ target_vert_co
-                target_layer.plane_offset_internal = target_vert_co
+                target_layer.recalc_offset(target_vert_co)
                 self.report({"INFO"}, f"{self.target} value set with auto-offset, operator exit")
             else:
                 self.report({"INFO"}, f"{self.target} value set as normal, operator exit")
