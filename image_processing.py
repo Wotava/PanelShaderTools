@@ -92,7 +92,7 @@ class PanelLayer(bpy.types.PropertyGroup):
         default=0
     )
     plane_dist_A: bpy.props.FloatProperty(
-        name="Plane Distance A",
+        name="Distance A",
         soft_min=0.1,
         min=0.0,
         max=500.0,
@@ -100,7 +100,7 @@ class PanelLayer(bpy.types.PropertyGroup):
         default=1
     )
     plane_dist_B: bpy.props.FloatProperty(
-        name="Plane Distance B",
+        name="Distance B",
         soft_min=0.1,
         min=0.0,
         max=500.0,
@@ -253,6 +253,12 @@ class PanelLayer(bpy.types.PropertyGroup):
         update=auto_update,
         default=True
     )
+    lock_distance: bpy.props.BoolProperty(
+        name="Lock Distance",
+        description="If enabled, Distance B will be equal to Distance A",
+        update=auto_update,
+        default=False
+    )
 
     # This dictionary defines which values are used for UI and packing
     sets = {
@@ -312,19 +318,23 @@ class PanelLayer(bpy.types.PropertyGroup):
                 setattr(self, item, getattr(target, item))
             i += 1
         self.name = target.name + " copy"
-        self.print_values()
 
     def get_values(self) -> []:
-        """Returns a list of layer values matching current panel type paired with their names
+        """Returns a list of layer values matching a current panel type paired with their names
          in format [value, value_name]"""
         values = []
         for val in self.sets[self.panel_type]:
             if val == 'distance_sum' or val == 'remap':
-                distance_sum = self.plane_dist_A + self.plane_dist_B
-                if distance_sum != 0:
-                    distance_remap = self.plane_dist_B / distance_sum
+                if self.lock_distance:
+                    distance_sum = self.plane_dist_A + self.plane_dist_B
+                    distance_remap = 0.5
                 else:
-                    distance_remap = 0
+                    distance_sum = self.plane_dist_A + self.plane_dist_B
+                    if distance_sum != 0:
+                        distance_remap = self.plane_dist_B / distance_sum
+                    else:
+                        distance_remap = 0
+
                 if val == "distance_sum":
                     values.append([distance_sum, "distance_sum"])
                     values.append([distance_remap, "remap"])
@@ -417,8 +427,19 @@ class PanelLayer(bpy.types.PropertyGroup):
             if prop == 'panel_type':
                 continue
             elif prop in ["distance_sum", "remap"]:
-                row.prop(self, "plane_dist_A")
-                row.prop(self, "plane_dist_B")
+                col = row.column(align=True)
+                col.prop(self, "plane_dist_A")
+
+                col = row.column(align=True)
+                if self.lock_distance:
+                    col.prop(self, "lock_distance", icon='LOCKED', text="")
+                else:
+                    col.prop(self, "lock_distance", icon='UNLOCKED', text="")
+
+                col = row.column(align=True)
+                col.prop(self, "plane_dist_B")
+                col.enabled = not self.lock_distance
+
                 i += 2
             elif prop in ["use_FG_mask", "fg_sectors", "bg_sectors", "sector_offset"]:
                 blend_box.prop(self, prop)
