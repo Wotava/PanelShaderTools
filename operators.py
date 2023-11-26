@@ -3,9 +3,11 @@ import math
 import bpy
 import bmesh
 from mathutils import Vector, Euler, Matrix, Quaternion
-from . utils import has_custom_attrib
+from .utils import has_custom_attrib, get_mesh_attrib
 import numpy as np
+
 ATTRIBUTE_NAME = "panel_preset_index"
+ATTRIBUTE_ID_NAME = "panel_preset_id"
 ID_ATTRIBUTE_NAME = "panel_preset_id"
 
 
@@ -227,17 +229,20 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
         start_mode = context.mode
         bpy.ops.object.mode_set(mode='OBJECT')
 
+        if len(context.selected_objects) > 0:
+            targets = context.selected_objects
+        else:
+            targets = [context.object]
+
         # Ensure we have all the necessary UV maps in the right order
         target_uv_names = ['UVMap', 'UVMap_Aligned', 'UVMap_SlopePreset', 'UVMap_Inset']
         target_preset_uv = 2
-        for obj in context.selected_objects:
+        for obj in targets:
             if len(obj.data.uv_layers) < 4:
                 for layer in target_uv_names[len(obj.data.uv_layers):]:
                     obj.data.uv_layers.new().name = layer
 
-        for obj in context.selected_objects:
-            target = obj.data.attributes
-
+        for obj in targets:
             if start_mode == 'OBJECT':
                 selected = [f.index for f in obj.data.polygons]
             else:
@@ -245,24 +250,30 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
 
             uv_layer = obj.data.uv_layers[target_preset_uv]
 
-            name = ATTRIBUTE_NAME
-            if target.find(name) < 0:
-                attrib = target.new(name, 'INT', 'FACE')
-            else:
-                attrib = target[target.find(name)]
+            # get (or create) required attributes for preset index and preset id
+            index_attribute = get_mesh_attrib(obj.data, ATTRIBUTE_NAME, 'INT', 'FACE')
+            id_attribute = get_mesh_attrib(obj.data, ATTRIBUTE_ID_NAME, 'INT', 'FACE')
 
-            # Process everything through separate lists to avoid slowdowns and segfaults
-            attributes = np.zeros((len(attrib.data.values())), dtype=int)
-            attrib.data.foreach_get("value", attributes)
-            for i in range(len(attributes)):
+            # Assign Index/ID values through separate lists to avoid slowdowns and segfaults
+            index_attribute_values = np.zeros((len(index_attribute.data.values())), dtype=int)
+            id_attribute_values = np.zeros((len(id_attribute.data.values())), dtype=int)
+
+            index_attribute.data.foreach_get("value", index_attribute_values)
+            id_attribute.data.foreach_get("value", id_attribute_values)
+
+            for i in range(len(index_attribute_values)):
                 if i in selected:
-                    attributes[i] = active_preset_index
-            attrib.data.foreach_set("value", attributes)
+                    index_attribute_values[i] = active_preset_index
+                    id_attribute_values[i] = active_preset_id
 
+            index_attribute.data.foreach_set("value", index_attribute_values)
+            id_attribute.data.foreach_set("value", id_attribute_values)
+
+            # Write Index to UV
             uv_all = np.zeros((len(uv_layer.data) * 2))
             uv_layer.data.foreach_get("uv", uv_all)
 
-            # get a list of selected
+            # Get a list of selected loops through polygons
             if start_mode == 'OBJECT':
                 target_loops = [[*x.loop_indices] for x in obj.data.polygons]
             else:
@@ -270,33 +281,15 @@ class PANELS_OP_AssignPreset(bpy.types.Operator):
 
             target_loops = [y for x in target_loops for y in x]  # extend a list of lists with nested comprehension
             for i in target_loops:
-                if math.isnan(uv_all[i*2]):
-                    uv_all[i*2] = 0.0
-                uv_all[i*2+1] = float(active_preset_index)
+                if math.isnan(uv_all[i * 2]):
+                    uv_all[i * 2] = 0.0
+                uv_all[i * 2 + 1] = float(active_preset_index)
             uv_layer.data.foreach_set("uv", uv_all)
-
-            # assign a dictionary as a custom property to hold scene_id = preset_id pairs
-
-            if not has_custom_attrib(obj, ID_ATTRIBUTE_NAME):
-                print("new dict")
-                obj[ID_ATTRIBUTE_NAME] = dict()
-            pair_attribute = obj[ID_ATTRIBUTE_NAME]
-            tdict = pair_attribute.to_dict()
-            tdict[str(active_preset_index)] = active_preset_id
-            print(tdict)
-
-            # Keep only used pairs
-            uniques = np.unique(attributes)
-            for key, value in zip(tdict.keys(), tdict.values()):
-                if int(key) not in uniques:
-                    tdict.pop(key)
-
-            pair_attribute.update(tdict)
-
             self.report({'INFO'}, f"Set preset {active_preset_index} on {len(selected)} faces")
 
         if start_mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='EDIT')
+        update_objects(targets)
         return {'FINISHED'}
 
 
@@ -319,54 +312,56 @@ class PANELS_OP_ActualizePresets(bpy.types.Operator):
         manager = context.scene.panel_manager
         bpy.ops.object.mode_set(mode='OBJECT')
 
+        # Update references in selected objects or do a global update if no applicable objects selected
         targets = []
         if len(context.selected_objects) > 0:
             targets = [x for x in context.selected_objects if x.type == 'MESH']
-
         if len(targets) == 0:
             targets = [x for x in bpy.data.objects if x.type == 'MESH']
 
         for obj in targets:
-            if not has_custom_attrib(obj, ID_ATTRIBUTE_NAME):
-                print(f"No preset pair data found on {obj.name}, skip")
-                continue
-
             target = obj.data.attributes
             uv_layer = obj.data.uv_layers['UVMap_SlopePreset']
 
-            name = ATTRIBUTE_NAME
-            if target.find(name) < 0:
+            if target.find(ATTRIBUTE_NAME) < 0:
                 print(f"No preset data found on {obj.name}, skip")
                 continue
             else:
-                attrib = target[name]
+                index_attribute = target[ATTRIBUTE_NAME]
 
-            preset_pos = np.zeros((len(attrib.data.values())), dtype=int)
-            attrib.data.foreach_get("value", preset_pos)
+            if target.find(ATTRIBUTE_ID_NAME) < 0:
+                print(f"No preset ID data found on {obj.name}, no way to update references automatically")
+                continue
+            else:
+                id_attribute = target[ATTRIBUTE_ID_NAME]
+
+            preset_index = np.zeros((len(index_attribute.data.values())), dtype=int)
+            preset_id = np.zeros((len(id_attribute.data.values())), dtype=int)
+            index_attribute.data.foreach_get("value", preset_index)
+            id_attribute.data.foreach_get("value", preset_id)
 
             preset_uv = np.zeros((len(uv_layer.data) * 2))
             uv_layer.data.foreach_get("uv", preset_uv)
 
             # Initialize "new" lists with negative ones, so we can replace unaffected values with original data
-            preset_pos_new = np.full((len(attrib.data.values())), fill_value=-1, dtype=int)
+            preset_pos_new = np.full((len(index_attribute.data.values())), fill_value=-1, dtype=int)
             preset_uv_new = np.full((len(uv_layer.data) * 2), fill_value=-1.0, dtype=float)
 
-            pair_dict = obj[ID_ATTRIBUTE_NAME].to_dict()
-            for key, value in zip(list(pair_dict.keys()), list(pair_dict.values())):
-                if manager.panel_presets[int(key)].id != value:
-                    new_pos = manager.find_pos_by_id(value)
+            # Get unique preset IDs and associated indices
+            unique_id, indices = np.unique(preset_id, return_index=True)
+            associated_indices = [preset_index[index] for index in indices]
+
+            for p_id, p_pos in zip(unique_id, associated_indices):
+                if manager.panel_presets[p_pos].id != p_id:
+                    new_pos = manager.find_pos_by_id(p_id)
                     if new_pos == -1:
                         # TODO Look for this id in prefs container and copy it if found
                         pass
-                    print(key, value)
-                    pair_dict.pop(key)
-                    pair_dict[str(new_pos)] = value
-                    preset_pos_new[np.where(preset_pos == int(key))] = new_pos
-                    preset_uv_new[np.where(preset_pos == int(key))] = float(new_pos)
-            obj[ID_ATTRIBUTE_NAME].clear()
-            obj[ID_ATTRIBUTE_NAME].update(pair_dict)
+                    preset_pos_new[np.where(preset_index == p_pos)] = new_pos
+                    preset_uv_new[np.where(preset_index == p_pos)] = float(new_pos)
+
             # Replace "-1" unaffected values with original data
-            preset_pos_new[preset_pos_new == -1] = preset_pos[preset_pos_new == -1]
+            preset_pos_new[preset_pos_new == -1] = preset_index[preset_pos_new == -1]
             preset_uv_new[preset_uv_new == -1] = preset_uv[preset_uv_new == -1]
 
             # Since we write slope mask to the U channel, fill all uneven indices with original values
@@ -374,9 +369,8 @@ class PANELS_OP_ActualizePresets(bpy.types.Operator):
             preset_uv_new[checker] = preset_uv[checker]
 
             # Actualize data on the mesh
-            attrib.data.foreach_set("value", preset_pos_new)
+            index_attribute.data.foreach_set("value", preset_pos_new)
             uv_layer.data.foreach_get("uv", preset_uv)
-
         return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -507,10 +501,10 @@ class PANELS_OP_WriteSlope(bpy.types.Operator):
             clean_loops = [y for x in clean_loops for y in x]  # extend a list of lists with nested comprehension
 
             for i in slope_loops:
-                uv_all[i*2] = -1
+                uv_all[i * 2] = -1
 
             for i in clean_loops:
-                uv_all[i*2] = +1
+                uv_all[i * 2] = +1
 
             uv_layer.data.foreach_set("uv", uv_all)
 
@@ -864,7 +858,6 @@ class PANELS_OP_UpdateTransform(bpy.types.Operator):
                     cur_attr = loc_delta @ cur_attr
                     setattr(layer, attribute, cur_attr)
 
-
         context.scene.panel_manager.write_image()
         obj.origin_transform.from_obj(obj)
 
@@ -928,15 +921,21 @@ class PANELS_OP_StorageIO(bpy.types.Operator):
             if manager.active_preset:
                 manager.sync_preset(manager.active_preset.id)
         else:
-            if len(context.selected_objects) < 0:
+            if len(context.selected_objects) == 0:
                 self.report({'INFO'}, "No object selected")
 
             used_presets = []
             for obj in context.selected_objects:
-                pair_dict = obj[ID_ATTRIBUTE_NAME].to_dict()
-                used_presets.extend(pair_dict.values())
-            used_presets = np.unique(used_presets)
+                if obj.data.attributes.find(ATTRIBUTE_ID_NAME) < 0:
+                    print(f"No preset ID data found on {obj.name}, no way to update references automatically")
+                    continue
+                else:
+                    id_attribute = obj.data.attributes[ATTRIBUTE_ID_NAME]
+                    preset_id = np.zeros((len(id_attribute.data.values())), dtype=int)
+                    id_attribute.data.foreach_get("value", preset_id)
+                    used_presets.append(np.unique(preset_id))
 
+            used_presets = np.unique(used_presets)
             pull_from_prefs = self.action_type == 'PULL_FROM_OBJECT'
 
             for preset_id in used_presets:

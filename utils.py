@@ -97,3 +97,12 @@ def has_custom_attrib(target_obj, name):
         return False
     else:
         return True
+
+
+def get_mesh_attrib(mesh, name, fallback_data_type, fallback_domain):
+    target_attributes = mesh.attributes
+    if target_attributes.find(name) < 0:
+        attrib = target_attributes.new(name, fallback_data_type, fallback_domain)
+    else:
+        attrib = target_attributes[target_attributes.find(name)]
+    return attrib
