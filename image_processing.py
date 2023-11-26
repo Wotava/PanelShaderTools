@@ -500,7 +500,7 @@ class LayerPreset(bpy.types.PropertyGroup):
         pixels.extend([0] * (target_length - len(pixels)))
         return pixels
 
-    def match(self, target: 'LayerPreset', name_postfix=True):
+    def match(self, target: 'LayerPreset', name_postfix=True, copy_id=True):
         """Copies all layers from target"""
         target_len = len(target.layers)
         self.layers.clear()
@@ -508,7 +508,9 @@ class LayerPreset(bpy.types.PropertyGroup):
             self.add_layer(target.layers[i])
 
         self.name = target.name
-        self.id = target.id
+        if copy_id:
+            self.id = target.id
+
         if name_postfix:
             self.name += " copy"
 
@@ -777,7 +779,7 @@ class LayerManager(bpy.types.PropertyGroup):
             target_preset = self.active_preset
 
         new_preset = self.new_preset()
-        new_preset.match(target_preset)
+        new_preset.match(target_preset, copy_id=False)
         self.active_preset_index = len(self.presets) - 1
         return new_preset
 
