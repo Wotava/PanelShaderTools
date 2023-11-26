@@ -737,7 +737,7 @@ class LayerManager(bpy.types.PropertyGroup):
         self.active_preset_index = len(self.presets) - 1
         return new_preset
 
-    def remove_preset(self, index: int = None, destroy=False):
+    def remove_preset(self, index: int = None, update_refs=False):
         """Remove and do something with linked objects"""
         if index:
             target = index
@@ -747,7 +747,7 @@ class LayerManager(bpy.types.PropertyGroup):
         if self.active_preset_index > 0:
             self.active_preset_index -= 1
 
-        if destroy:
+        if update_refs:
             attrib_array = np.zeros((1), int)
             for obj in bpy.data.objects:
                 if obj.type != 'MESH':
@@ -764,13 +764,10 @@ class LayerManager(bpy.types.PropertyGroup):
                 attrib_array[attrib_array > target] -= 1
                 attrib.foreach_set('value', attrib_array.tolist())
                 obj.data.update()
-            preferences = bpy.context.preferences
-            addon_prefs = preferences.addons[__package__].preferences
-            addon_prefs.remove_id(self.presets[target].id)
-            self.presets.remove(target)
-
-        else:
-            self.presets[target].clean()
+        preferences = bpy.context.preferences
+        addon_prefs = preferences.addons[__package__].preferences
+        addon_prefs.remove_id(self.presets[target].id)
+        self.presets.remove(target)
 
     def duplicate_preset(self, index: int = None):
         """Duplicate preset at the given index"""

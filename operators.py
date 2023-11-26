@@ -64,10 +64,9 @@ class PANELS_OP_RemovePreset(bpy.types.Operator):
     bl_idname = "panels.remove_preset"
     bl_options = {'REGISTER', 'UNDO'}
 
-    destructive: bpy.props.BoolProperty(
-        name="Delete from Stack",
-        description="Deletes this preset from stack and updates references on all objects. "
-                    "WARNING: can be slow in large scenes",
+    update_refs: bpy.props.BoolProperty(
+        name="Update References",
+        description="Update references on all objects. WARNING: can be slow in large scenes",
         default=False
     )
 
@@ -79,7 +78,7 @@ class PANELS_OP_RemovePreset(bpy.types.Operator):
         if context.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
         manager = context.scene.panel_manager
-        manager.remove_preset(destroy=self.destructive)
+        manager.remove_preset(update_refs=self.update_refs)
         if context.scene.panel_manager.target_image:
             manager.clean_image()
             manager.write_image()
