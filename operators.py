@@ -703,7 +703,7 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
             if len(selection) < 2:
                 self.report({'ERROR'}, "Not enough data for selection. Maybe you have non-mesh selection?")
                 return {'CANCELLED'}
-            target_location: Vector = (selection[0] - selection[1])
+            target_location: Vector = (world_matrix @ selection[0]) - (world_matrix @ selection[1])
             target_location.normalize()
             setattr(target_layer, self.target, target_location)
 
