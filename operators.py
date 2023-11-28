@@ -666,14 +666,20 @@ class PANELS_OP_AdjustImage(bpy.types.Operator):
 
 
 class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
-    """Define plane normal for a layer by selecting either an edge or two vertices"""
-    bl_label = "Define Plane Normal"
+    """Define any vector parameter for a layer"""
+    bl_label = "Define Vector Parameter"
     bl_idname = "panels.define_plane_normal"
     bl_options = {'REGISTER', 'UNDO'}
 
     target: bpy.props.StringProperty(
         name="Property to Set",
-        default="plane_normal"
+        default="plane_normal",
+        options={'HIDDEN'}
+    )
+
+    use_uv_cursor: bpy.props.BoolProperty(
+        name="Use UV Editor 2D Cursor Location",
+        default=False
     )
     
     @classmethod
@@ -682,12 +688,35 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
 
     def execute(self, context):
         # find selected vertices
-
-        selection = [vert.co for vert in self.bm.verts if vert.select]
         target_layer = context.scene.panel_manager.active_preset.active_layer
         world_matrix = context.active_object.matrix_world
 
-        if self.target in ["plane_normal", "tile_direction_3d"]:
+        if self.is_uv:
+            if self.cursor_area:
+                center = self.cursor_area.spaces[0].cursor_location.copy()
+                center.resize_3d()
+            else:
+                # Write Index to UV TODO this is sloppy
+                bpy.ops.object.mode_set(mode='OBJECT')
+                uv_layer = context.object.data.uv_layers["UVMap"]
+                uv_all = np.zeros((len(uv_layer.data) * 2))
+                uv_layer.data.foreach_get("uv", uv_all)
+
+                # Get a list of selected loops through polygons
+                target_loops = [[*x.loop_indices] for x in context.object.data.polygons if x.select]
+                target_loops = [y for x in target_loops for y in x]  # extend a list of lists with nested comprehension
+
+                med_u = []
+                med_v = []
+                for i in target_loops:
+                    med_u.append(uv_all[i * 2])
+                    med_v.append(uv_all[i * 2 + 1])
+                med_v = sum(med_v) / len(med_v)
+                med_u = sum(med_u) / len(med_u)
+                center = Vector((med_u, med_v, 0.0))
+            setattr(target_layer, self.target, center)
+
+        elif self.target in ["plane_normal", "tile_direction_3d"]:
             selection = []
             for elem in reversed(self.bm.select_history):
                 if isinstance(elem, bmesh.types.BMVert):
@@ -711,11 +740,13 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
                 self.report({"INFO"}, f"{self.target} value set as normal, operator exit")
         else:
             # calculate median location
+            selection = [vert.co for vert in self.bm.verts if vert.select]
             center = sum(selection, Vector()) / len(selection)
             center = world_matrix @ center
             setattr(target_layer, self.target, center)
-            self.report({"INFO"}, f"{self.target} value set, operator exit")
 
+        self.report({"INFO"}, f"{self.target} value set, operator exit")
+        bpy.ops.object.mode_set(mode=self.start_mode)
         self.finished = True
         return {'FINISHED'}
 
@@ -739,9 +770,9 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
     def invoke(self, context, event):
-        self.start_mode = context.mode
         if context.mode != 'EDIT_MESH':
             bpy.ops.object.mode_set(mode='EDIT')
+            self.start_mode = 'OBJECT'
         else:
             self.start_mode = 'EDIT'
 
@@ -751,6 +782,15 @@ class PANELS_OP_DefinePlaneNormal(bpy.types.Operator):
         self.cancelled = False
         self.finished = False
         self.bm = bmesh.from_edit_mesh(context.edit_object.data)
+
+        self.is_uv = context.scene.panel_manager.active_preset.active_layer.panel_type.find("UV") != -1
+        if self.is_uv:
+            for x in context.screen.areas:
+                if x.type == 'IMAGE_EDITOR':
+                    self.cursor_area = x
+                    return context.window_manager.invoke_props_dialog(self)
+            else:
+                self.cursor_area = None
 
         if self.target in ["plane_normal", "tile_direction_3d"] and context.object.data.total_vert_sel == 2:
             self.execute(context)
