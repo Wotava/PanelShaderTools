@@ -545,25 +545,40 @@ class LayerPreset(bpy.types.PropertyGroup):
         row = layout.row()
         row.template_list("DATA_UL_PanelLayer", "", self, "layers", self,
                           "active_layer_index")
-        col = row.column(align=True)
-        col.operator("panels.add_layer", icon='ADD', text="")
-        col.operator("panels.remove_layer", icon='REMOVE', text="")
+        main_col = row.column(align=True)
+        col = main_col.column(align=True)
+        op = col.operator("panels.preset_manipulator", icon='ADD', text="")
+        op.action_type = 'ADD_LAYER'
+        col.enabled = len(self.layers) < 8
+
+
+        col = main_col.column(align=True)
+        op = col.operator("panels.preset_manipulator", icon='REMOVE', text="")
+        op.action_type = 'REMOVE_LAYER'
+        col.enabled = len(self.layers) > 0
         col.separator()
 
-        col.operator("panels.duplicate_layer", icon='DUPLICATE', text="")
+        col = main_col.column(align=True)
+        op = col.operator("panels.preset_manipulator", icon='DUPLICATE', text="")
+        op.action_type = 'DUPLICATE_LAYER'
+        col.enabled = 0 < len(self.layers) < 8
         col.separator()
 
-        if len(self.layers) > 1 and self.active_layer_index > 0:
-            op = col.operator("panels.move_layer", icon='TRIA_UP', text="")
-            op.move_up = True
-        if len(self.layers) > 1 and self.active_layer_index < (len(self.layers) - 1):
-            op = col.operator("panels.move_layer", icon='TRIA_DOWN', text="")
-            op.move_up = False
+        col = main_col.column(align=True)
+        op = col.operator("panels.preset_manipulator", icon='TRIA_UP', text="")
+        op.action_type = 'MOVE_LAYER'
+        op.move_up = True
+        col.enabled = len(self.layers) > 1 and self.active_layer_index > 0
+
+        col = main_col.column(align=True)
+        op = col.operator("panels.preset_manipulator", icon='TRIA_DOWN', text="")
+        op.action_type = 'MOVE_LAYER'
+        op.move_up = False
+        col.enabled = len(self.layers) > 1 and self.active_layer_index < (len(self.layers) - 1)
 
         if len(self.layers) > 0:
             current_layer = self.active_layer
             current_layer.draw_panel(layout, show_operators)
-
 
 class IDContainer(bpy.types.PropertyGroup):
     # I feel like i'm retarded for doing this

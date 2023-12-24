@@ -44,27 +44,11 @@ class DebugOperator(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class PANELS_OP_AddPreset(bpy.types.Operator):
-    """Adds new panel preset, used in UI"""
-    bl_label = "Add Panel Preset"
-    bl_idname = "panels.add_preset"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        context.scene.panel_manager.new_preset()
-        update_objects(context.visible_objects)
-        return {'FINISHED'}
-
-
-class PANELS_OP_RemovePreset(bpy.types.Operator):
-    """Resets selected preset to defaults or deletes them completely if prompted"""
-    bl_label = "Remove Panel Preset"
-    bl_idname = "panels.remove_preset"
-    bl_options = {'REGISTER', 'UNDO'}
+class PANELS_OP_PresetManipulation(bpy.types.Operator):
+    """Unified operator for preset manipulation, used in UI"""
+    bl_label = "Preset Manipulator"
+    bl_idname = "panels.preset_manipulator"
+    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
 
     update_refs: bpy.props.BoolProperty(
         name="Update References",
@@ -72,139 +56,150 @@ class PANELS_OP_RemovePreset(bpy.types.Operator):
         default=False
     )
 
-    @classmethod
-    def poll(cls, context):
-        return len(context.scene.panel_manager.presets) > 0
-
-    def execute(self, context):
-        if context.mode != 'OBJECT':
-            bpy.ops.object.mode_set(mode='OBJECT')
-        manager = context.scene.panel_manager
-        manager.remove_preset(update_refs=self.update_refs)
-        if context.scene.panel_manager.target_image:
-            manager.clean_image()
-            manager.write_image()
-        update_objects(context.visible_objects)
-        return {'FINISHED'}
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-
-class PANELS_OP_AddLayer(bpy.types.Operator):
-    """Adds new layer to active preset, used in UI"""
-    bl_label = "Add Preset Layer"
-    bl_idname = "panels.add_layer"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return (context.scene.panel_manager.active_preset
-                and len(context.scene.panel_manager.active_preset.layers) < context.scene.panel_manager.max_layers)
-
-    def execute(self, context):
-        manager = context.scene.panel_manager
-        manager.active_preset.add_layer()
-        if manager.target_image:
-            manager.write_image()
-        else:
-            self.report({'INFO'}, "No target image provided")
-        update_objects(context.visible_objects)
-        return {'FINISHED'}
-
-
-class PANELS_OP_RemoveLayer(bpy.types.Operator):
-    """Removes active layer from active preset, used in UI"""
-    bl_label = "Remove Preset Layer"
-    bl_idname = "panels.remove_layer"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return context.scene.panel_manager.active_preset and len(context.scene.panel_manager.active_preset.layers) > 0
-
-    def execute(self, context):
-        manager = context.scene.panel_manager
-        manager.active_preset.remove_layer()
-        if manager.target_image:
-            manager.write_image()
-        else:
-            self.report({'INFO'}, "No target image provided")
-        update_objects(context.visible_objects)
-        return {'FINISHED'}
-
-
-class PANELS_OP_MoveLayer(bpy.types.Operator):
-    """Moves active layer in stack"""
-    bl_label = "Move Preset Layer"
-    bl_idname = "panels.move_layer"
-    bl_options = {'REGISTER', 'UNDO'}
-
     move_up: bpy.props.BoolProperty(
-        name="Move Selection Up",
-        default=True
+        name="Move Up",
+        description="Move up",
+        default=False
+    )
+
+    action_type: bpy.props.EnumProperty(
+        name="Action",
+        description="",
+        items=[
+            ('ADD_PRESET', 'Add Preset', 'Add new preset'),
+            ('REMOVE_PRESET', 'Remove Preset', 'Remove active preset'),
+            ('DUPLICATE_PRESET', 'Duplicate Preset', 'Duplicate active preset'),
+            ('ADD_LAYER', 'Add Layer', 'Add new layer to active preset'),
+            ('REMOVE_LAYER', 'Remove Layer', 'Remove active layer'),
+            ('DUPLICATE_LAYER', 'Duplicate Layer', 'Duplicate active layer'),
+            ('MOVE_LAYER', 'Move Layer', 'Move active layer up'),
+        ],
+        default='ADD_PRESET',
     )
 
     @classmethod
     def poll(cls, context):
-        return context.scene.panel_manager.active_preset and len(context.scene.panel_manager.active_preset.layers) > 1
-
-    def execute(self, context):
-        manager = context.scene.panel_manager
-        active_preset = manager.active_preset
-
-        current_index = active_preset.active_layer_index
-        target_index = current_index
-
-        if self.move_up:
-            target_index -= 1
-        else:
-            target_index += 1
-
-        # Just to make sure
-        if target_index < 0 or target_index > (len(active_preset.layers) - 1):
-            self.report({'ERROR'}, "Index is out of range")
-            return {'CANCELLED'}
-
-        active_preset.layers.move(current_index, target_index)
-        active_preset.active_layer_index = target_index
-
-        if manager.target_image:
-            manager.write_image()
-        else:
-            self.report({'INFO'}, "No target image provided")
-
-        update_objects(context.visible_objects)
-        return {'FINISHED'}
-
-
-class PANELS_OP_DuplicateLayer(bpy.types.Operator):
-    """Duplicates active layer"""
-    bl_label = "Duplicate Preset Layer"
-    bl_idname = "panels.duplicate_layer"
-    bl_options = {'REGISTER', 'UNDO'}
+        return True
 
     @classmethod
-    def poll(cls, context):
-        return context.scene.panel_manager.active_preset and len(context.scene.panel_manager.active_preset.layers) > 0
+    def description(cls, context, props):
+        option = getattr(props, "action_type")
+        option = option.split("_")
+        desc = ""
+
+        desc += option[0].capitalize() + " " + option[1].capitalize()
+        return desc
+
+    def draw(self, context):
+        self.layout.prop(self, "update_refs")
 
     def execute(self, context):
         manager = context.scene.panel_manager
         active_preset = manager.active_preset
-        current_layer = active_preset.active_layer
 
-        new_layer = active_preset.layers.add()
-        new_layer.match(current_layer)
+        if self.action_type == 'ADD_PRESET':
+            manager.new_preset()
+            update_objects(context.visible_objects)
 
-        active_preset.active_layer_index = len(active_preset.layers) - 1
+        elif self.action_type == 'REMOVE_PRESET':
+            if len(context.scene.panel_manager.presets) == 0:
+                self.repor('INFO', "Nothing to remove")
+                return {'CANCELLED'}
 
-        if manager.target_image:
-            manager.write_image()
-        else:
-            self.report({'INFO'}, "No target image provided")
+            if context.mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
 
-        update_objects(context.visible_objects)
+            manager.remove_preset(update_refs=self.update_refs)
+            if context.scene.panel_manager.target_image:
+                manager.clean_image()
+                manager.write_image()
+            update_objects(context.visible_objects)
+
+        elif self.action_type == 'DUPLICATE_PRESET':
+            if not manager.active_preset:
+                self.repor('INFO', "Nothing to duplicate")
+                return {'CANCELLED'}
+            manager.duplicate_preset()
+
+        elif self.action_type == 'ADD_LAYER':
+            if not manager.active_preset:
+                self.repor('INFO', "No active preset to add to")
+                return {'CANCELLED'}
+
+            manager.active_preset.add_layer()
+            if manager.target_image:
+                manager.write_image()
+            else:
+                self.report({'INFO'}, "No target image provided")
+            update_objects(context.visible_objects)
+
+        elif self.action_type == 'REMOVE_LAYER':
+            if not manager.active_preset or not len(manager.active_preset.layers):
+                self.repor('INFO', "No active preset to remove from or no layers present")
+                return {'CANCELLED'}
+
+            manager.active_preset.remove_layer()
+            if manager.target_image:
+                manager.write_image()
+            else:
+                self.report({'INFO'}, "No target image provided")
+            update_objects(context.visible_objects)
+
+        elif self.action_type == 'DUPLICATE_LAYER':
+            if not manager.active_preset or not len(manager.active_preset.layers):
+                self.repor('INFO', "No active preset or no layer for duplication")
+                return {'CANCELLED'}
+
+            if len(manager.active_preset.layers) == 8:
+                self.repor('INFO', "Layer cap reached")
+                return {'CANCELLED'}
+
+            current_layer = active_preset.active_layer
+            new_layer = active_preset.layers.add()
+            new_layer.match(current_layer)
+
+            active_preset.active_layer_index = len(active_preset.layers) - 1
+
+            if manager.target_image:
+                manager.write_image()
+            else:
+                self.report({'INFO'}, "No target image provided")
+            update_objects(context.visible_objects)
+
+        elif self.action_type == 'MOVE_LAYER':
+            if not manager.active_preset or not len(manager.active_preset.layers):
+                self.repor('INFO', "No active preset or no layer for duplication")
+                return {'CANCELLED'}
+
+            current_index = active_preset.active_layer_index
+
+            if self.move_up:
+                target_index = current_index - 1
+            else:
+                target_index = current_index + 1
+
+            # Just to make sure
+            if target_index < 0 or target_index > (len(active_preset.layers) - 1):
+                self.report({'ERROR'}, "Index is out of range")
+                return {'CANCELLED'}
+
+            active_preset.layers.move(current_index, target_index)
+            active_preset.active_layer_index = target_index
+
+            if manager.target_image:
+                manager.write_image()
+            else:
+                self.report({'INFO'}, "No target image provided")
+
+            update_objects(context.visible_objects)
+
         return {'FINISHED'}
+
+    def invoke(self, context, event):
+        if self.action_type == 'REMOVE_PRESET':
+            return context.window_manager.invoke_props_dialog(self)
+        else:
+            return self.execute(context)
 
 
 class PANELS_OP_AssignPreset(bpy.types.Operator):
@@ -617,21 +612,6 @@ class PANELS_OP_SelectPresetFromFace(bpy.types.Operator):
         else:
             self.execute(context)
             return {'FINISHED'}
-
-
-class PANELS_OP_DuplicatePreset(bpy.types.Operator):
-    """Duplicates active preset and all its layers"""
-    bl_label = "Duplicate Preset"
-    bl_idname = "panels.duplicate_preset"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return len(context.scene.panel_manager.presets) > 0
-
-    def execute(self, context):
-        context.scene.panel_manager.duplicate_preset()
-        return {'FINISHED'}
 
 
 class PANELS_OP_BakePresets(bpy.types.Operator):

@@ -62,6 +62,7 @@ class DATA_UL_PanelLayer(bpy.types.UIList):
             layout.alignment = 'CENTER'
             layer.label(text="Layer", translate=False, icon='QUESTION')
 
+
 class DATA_PT_PanelShader(bpy.types.Panel):
     bl_label = "Panel Shader Presets"
     bl_idname = "DATA_PT_panel_controls"
@@ -87,11 +88,23 @@ class DATA_PT_PanelShader(bpy.types.Panel):
         row = layout.row()
         row.template_list("DATA_UL_PanelPreset", "", preset_storage, "panel_presets", manager,
                           "active_preset_index")
+
+        # PRESET MANIPULATORS
         col = row.column(align=True)
-        col.operator("panels.add_preset", icon='ADD', text="")
-        col.operator("panels.remove_preset", icon='REMOVE', text="")
+        op = col.operator("panels.preset_manipulator", icon='ADD', text="")
+        op.action_type = 'ADD_PRESET'
+
+        col = col.column(align=True)
+        op = col.operator("panels.preset_manipulator", icon='REMOVE', text="")
+        op.action_type = 'REMOVE_PRESET'
+        col.enabled = len(context.scene.panel_manager.presets) > 0
+
         col.separator()
-        col.operator("panels.duplicate_preset", icon='DUPLICATE', text="")
+        col = col.column(align=True)
+        op = col.operator("panels.preset_manipulator", icon='DUPLICATE', text="")
+        op.action_type = 'DUPLICATE_PRESET'
+        col.enabled = manager.active_preset is not None
+
         op = col.operator("panels.storage_io", icon='FILE_REFRESH', text="")
         op.action_type = 'SYNC_SELECTED'
 
