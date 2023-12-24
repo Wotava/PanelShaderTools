@@ -489,14 +489,10 @@ class LayerPreset(bpy.types.PropertyGroup):
         default=0
     )
 
-    def add_layer(self, match_target: PanelLayer = None):
+    def add_layer(self):
         if len(self.layers) < MAX_LAYERS:
             new_layer = self.layers.add()
-            if match_target:
-                new_layer.match(match_target)
-            else:
-                new_layer.name = "Layer Preset №" + str(len(self.layers) - 1)
-            self.active_layer_index = len(self.layers) - 1
+            new_layer.name = "Layer Preset №" + str(len(self.layers) - 1)
             return new_layer
         else:
             print(f"Layer cap at {MAX_LAYERS} reached")
@@ -526,7 +522,9 @@ class LayerPreset(bpy.types.PropertyGroup):
         target_len = len(target.layers)
         self.layers.clear()
         for i in range(0, target_len):
-            self.add_layer(target.layers[i])
+            new_layer = self.add_layer()
+            new_layer.match(target.layers[i])
+            self.active_layer_index = len(self.layers) - 1
 
         self.name = target.name
         if copy_id:
